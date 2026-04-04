@@ -1,8 +1,0 @@
-{
-  "max_clips": 200,
-  "max_hours": null,
-  "excluded_apps": [],
-  "auto_start": true,
-  "global_shortcuts": true,
-  "onboarding_complete": true
-}
