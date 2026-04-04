@@ -1,5 +1,29 @@
 [
   {
+    "text": "git add . git commit -m \"Update installation instructions\" git push",
+    "type": "text",
+    "date": "04 Apr 2026, 03:20",
+    "pinned": false,
+    "tag": null,
+    "template": false
+  },
+  {
+    "text": "git push",
+    "type": "text",
+    "date": "04 Apr 2026, 03:19",
+    "pinned": false,
+    "tag": null,
+    "template": false
+  },
+  {
+    "text": "git commit -m \"Add ico file\"",
+    "type": "text",
+    "date": "04 Apr 2026, 03:19",
+    "pinned": false,
+    "tag": null,
+    "template": false
+  },
+  {
     "text": "git add .",
     "type": "text",
     "date": "04 Apr 2026, 03:19",
