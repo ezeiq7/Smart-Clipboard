@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="SmartClipboard_1.ico" width="80" height="80" alt="Smart Clipboard Logo">
+<img src="logo.png" width="80" height="80" alt="Smart Clipboard Logo">
 
 # Smart Clipboard ✨
 
