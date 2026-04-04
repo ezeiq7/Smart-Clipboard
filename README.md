@@ -11,7 +11,7 @@ No accounts. No internet. Everything stays on your device.
 
 [![Download](https://img.shields.io/badge/Download-v1.0.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
-[![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-Source%20Available-orange?style=for-the-badge)](LICENSE)
 
 ![Smart Clipboard Screenshot](screenshot.png)
 
@@ -162,6 +162,30 @@ open Settings → disable auto-start, then delete the folder.
 - [pywin32](https://github.com/mhammond/pywin32) — Windows API
 
 ---
+
+## Running from Source
+```bash
+# Clone the repository
+git clone https://github.com/ezeiq7/Smart-Clipboard.git
+
+# Install dependencies
+pip install pynput pyperclip Pillow pystray pywin32
+
+# Run the app
+python main.py
+```
+```
+
+**Then push everything:**
+```
+git add .
+git commit -m "Add source code — open source release"
+git push
+```
+
+After that go back to Reddit and reply to that comment:
+```
+Fair point! Source code is now available for review.
 
 ## Reporting Issues
 
