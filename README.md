@@ -63,11 +63,12 @@ complex, too ugly, or charged too much.
 
 **No installer needed — just download and run.**
 
-1. Download `Smart Clipboard.exe` from 
-   [Releases](https://github.com/ezeiq7/smart-clipboard/releases/latest)
-2. Run it once — it registers itself to start with Windows automatically
-3. Follow the 30-second onboarding
-4. That's it — the app lives in your system tray
+1. Go to [Releases](https://github.com/ezeiq7/smart-clipboard/releases/latest)
+2. Download both `Smart Clipboard.exe` and `SmartClipboard_1.ico`
+3. Put both files in the same folder anywhere on your PC
+4. Run `Smart Clipboard.exe` once
+5. Follow the 30-second onboarding
+6. Done — the app starts automatically with Windows from now on
 
 ### Requirements
 - Windows 10 or Windows 11
