@@ -6,8 +6,9 @@ import ctypes.wintypes
 import pyperclip
 from pynput import keyboard
 
-_pressed    = set()
-_last_clip  = ""
+_pressed        = set()
+_last_clip      = ""
+_last_ctrl_time = 0.0
 
 # ── RegisterHotKey helpers ────────────────────────────────────────────────
 
@@ -48,12 +49,22 @@ def _launcher_hotkey_thread(launcher_callback):
 
 # ── Ctrl+Alt+C via pynput ─────────────────────────────────────────────────
 
-def _on_press(key, pin_callback=None):
+def _on_press(key, pin_callback=None, show_callback=None):
+    global _last_ctrl_time
     try:
         _pressed.add(key)
         ctrl = keyboard.Key.ctrl   in _pressed or keyboard.Key.ctrl_l  in _pressed or keyboard.Key.ctrl_r  in _pressed
         alt  = keyboard.Key.alt    in _pressed or keyboard.Key.alt_l   in _pressed or keyboard.Key.alt_r   in _pressed
         c    = any((hasattr(k, 'vk') and k.vk == 67) or (hasattr(k, 'char') and k.char in ('c', 'C')) for k in _pressed)
+
+        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+            now = time.time()
+            if now - _last_ctrl_time < 0.3:
+                if show_callback:
+                    show_callback()
+                _last_ctrl_time = 0.0
+            else:
+                _last_ctrl_time = now
 
         if ctrl and alt and c:
             if pin_callback:
@@ -93,12 +104,12 @@ def _poll_clipboard(callback):
 
 # ── Entry point ───────────────────────────────────────────────────────────
 
-def start_listener(save_callback, pin_callback=None, launcher_callback=None, toggle_callback=None, incognito_callback=None):
+def start_listener(save_callback, pin_callback=None, launcher_callback=None, toggle_callback=None, incognito_callback=None, show_callback=None):
     threading.Thread(target=_poll_clipboard, args=(save_callback,), daemon=True).start()
 
     def run_pynput():
         with keyboard.Listener(
-            on_press=lambda key: _on_press(key, pin_callback),
+            on_press=lambda key: _on_press(key, pin_callback, show_callback),
             on_release=_on_release,
             suppress=False,
         ) as listener:

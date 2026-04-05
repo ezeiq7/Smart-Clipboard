@@ -48,6 +48,10 @@ complex, too ugly, or charged too much.
   to disk. Clears automatically when you're done.
 - 🎨 **Syntax highlighting** — code clips display with colour 
   highlighting in the preview panel.
+- ⊕ **Merge clips** — select multiple clips and merge 
+  them with a custom separator into one paste
+- ⌨️ **Double-tap Ctrl** — open the launcher instantly 
+  without memorising shortcuts
 
 ### Privacy & Safety
 - 🛡️ **Sensitive content filter** — passwords, credit cards and 

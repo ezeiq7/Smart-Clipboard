@@ -120,12 +120,14 @@ class ShortcutsCard:
             ("Ctrl+Shift+V",   "Open quick-paste launcher"),
             ("Ctrl+Shift+E",   "Toggle capture on / off"),
             ("Ctrl+Shift+X",   "Toggle private mode"),
+            ("Double Ctrl",    "Open Smart Clipboard"),
         ]),
         ("List",  [
             ("C",  "Copy selected"),
             ("P",  "Pin / unpin"),
             ("T",  "Tag selected"),
             ("M",  "Mark / unmark template"),
+            ("F",  "Merge selected clips"),
             ("E",  "Edit selected"),
             ("Del","Delete selected"),
             ("↑ ↓","Navigate"),
@@ -234,6 +236,7 @@ class App:
             launcher_callback=lambda hwnd: self.root.after(0, lambda: self._launcher.open(hwnd)) if storage.load_settings().get("global_shortcuts", True) else None,
             toggle_callback=lambda: self.root.after(0, self._toggle_active) if storage.load_settings().get("global_shortcuts", True) else None,
             incognito_callback=lambda: self.root.after(0, self._toggle_incognito) if storage.load_settings().get("global_shortcuts", True) else None,
+            show_callback=lambda: self.root.after(0, self._show_window) if storage.load_settings().get("global_shortcuts", True) else None,
         )
         self._add_to_startup()
         if not storage.load_settings().get("onboarding_complete"):
@@ -272,11 +275,33 @@ class App:
         self.root.withdraw()
 
     def _show_window(self):
-        self.root.deiconify()
+        state = self.root.state()
+        if state == "withdrawn":
+            self.root.deiconify()
+        elif state == "iconic":
+            self.root.deiconify()
+        self.root.after(50, self._bring_to_front)
+
+    def _bring_to_front(self):
+        import ctypes
+        import os, sys
+        hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+        if not hwnd:
+            hwnd = self.root.winfo_id()
+        # Trick Windows into allowing SetForegroundWindow by attaching to the foreground thread
+        fg_hwnd   = ctypes.windll.user32.GetForegroundWindow()
+        cur_tid   = ctypes.windll.kernel32.GetCurrentThreadId()
+        fg_tid    = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
+        if fg_tid and fg_tid != cur_tid:
+            ctypes.windll.user32.AttachThreadInput(fg_tid, cur_tid, True)
+        ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+        ctypes.windll.user32.BringWindowToTop(hwnd)
+        if fg_tid and fg_tid != cur_tid:
+            ctypes.windll.user32.AttachThreadInput(fg_tid, cur_tid, False)
         self.root.lift()
         self.root.focus_force()
         self.listbox.focus_set()
-        import os, sys
         _base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
         ico = os.path.join(_base, "SmartClipboard_1.ico")
         if not os.path.exists(ico):
@@ -546,6 +571,7 @@ class App:
         self.listbox.bind("<t>",      lambda _e: self._show_tag_menu())
         self.listbox.bind("<m>",      lambda _e: self._toggle_template())
         self.listbox.bind("<e>",      lambda _e: self._edit_selected())
+        self.listbox.bind("<f>",      lambda _e: self._merge_clips())
         self.listbox.bind("<Return>", lambda _e: self._copy_and_close())
 
         # Divider
@@ -633,6 +659,14 @@ class App:
         _hover(self._tag_btn, WHITE, BORDER)
         Tooltip(self._tag_btn, "Add or change the tag for this clip  (T)")
 
+        merge_btn = tk.Button(bar, text="⊕  Merge",
+                              bg=BORDER, fg=TEXT_DARK,
+                              activebackground=WHITE, activeforeground=TEXT_DARK,
+                              command=self._merge_clips, **cfg)
+        merge_btn.pack(side="left", padx=(8, 0))
+        _hover(merge_btn, BORDER, WHITE)
+        Tooltip(merge_btn, "Merge selected clips into one  (F)")
+
         # Visual separator before destructive action
         tk.Frame(bar, bg=BORDER, width=1).pack(side="left", fill="y", padx=(6, 10), pady=3)
 
@@ -684,6 +718,10 @@ class App:
             # Detect code — preserve formatting, otherwise normalize
             if _looks_like_code(content):
                 text = content
+                storage.save_clip(text, clip_type="text")
+                storage.set_tag(text, "code")
+                self._refresh_list()
+                return
             else:
                 text = " ".join(content.split())
             storage.save_clip(text, clip_type="text")
@@ -992,6 +1030,86 @@ class App:
         x = self.root.winfo_x() + (self.root.winfo_width()  - pw) // 2
         y = self.root.winfo_y() + (self.root.winfo_height() - ph) // 2
         popup.geometry(f"{pw}x{ph}+{x}+{y}")
+
+    def _merge_clips(self):
+        selected = self.listbox.curselection()
+        if len(selected) < 2:
+            self._show_toast("Select 2 or more clips to merge")
+            return
+
+        clips = self._get_current_clips()
+        texts = []
+        for i in selected:
+            if i < len(clips):
+                c = clips[i]
+                if c.get("type") != "image":
+                    texts.append(c["text"])
+
+        if len(texts) < 2:
+            self._show_toast("Select 2 or more text clips to merge")
+            return
+
+        popup = tk.Toplevel(self.root)
+        popup.title("Merge Clips")
+        popup.resizable(False, False)
+        popup.configure(bg=HEADER_BG)
+        popup.grab_set()
+        w, h = 340, 230
+        px = self.root.winfo_rootx() + (self.root.winfo_width() - w) // 2
+        py = self.root.winfo_rooty() + (self.root.winfo_height() - h) // 2
+        popup.geometry(f"{w}x{h}+{px}+{py}")
+
+        tk.Label(popup, text=f"Merge {len(texts)} clips",
+                 font=("Segoe UI", 11, "bold"),
+                 bg=HEADER_BG, fg=TEXT_DARK).pack(pady=(18, 4))
+        tk.Label(popup, text="Choose a separator:",
+                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY).pack()
+
+        sep_var = tk.StringVar(value="Newline")
+        custom_var = tk.StringVar()
+
+        options_frame = tk.Frame(popup, bg=HEADER_BG)
+        options_frame.pack(pady=10)
+
+        custom_entry = tk.Entry(options_frame, textvariable=custom_var,
+                                font=("Segoe UI", 9), bg=WHITE, fg=TEXT_DARK,
+                                insertbackground=TEXT_DARK, relief="flat",
+                                highlightbackground=BORDER, highlightthickness=1,
+                                width=14)
+
+        def on_option_change(*_):
+            if sep_var.get() == "Custom":
+                custom_entry.grid(row=1, column=0, columnspan=4, pady=(6, 0))
+                custom_entry.focus_set()
+            else:
+                custom_entry.grid_remove()
+
+        for col, label in enumerate(["Newline", "Comma", "Space", "Custom"]):
+            rb = tk.Radiobutton(options_frame, text=label, variable=sep_var, value=label,
+                                font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_DARK,
+                                selectcolor=HEADER_BG, activebackground=HEADER_BG,
+                                command=on_option_change)
+            rb.grid(row=0, column=col, padx=6)
+
+        def confirm():
+            import pyperclip
+            choice = sep_var.get()
+            if choice == "Newline":   sep = "\n"
+            elif choice == "Comma":   sep = ", "
+            elif choice == "Space":   sep = " "
+            else:                     sep = custom_var.get()
+            merged = sep.join(texts)
+            pyperclip.copy(merged)
+            popup.destroy()
+            self._show_toast(f"Merged {len(texts)} clips ✅")
+
+        tk.Button(popup, text="Merge & Copy",
+                  font=("Segoe UI", 9, "bold"),
+                  bg=ACCENT, fg="white", relief="flat",
+                  padx=20, pady=7, cursor="hand2", bd=0,
+                  command=confirm).pack(pady=(6, 0))
+        popup.bind("<Return>", lambda _: confirm())
+        popup.bind("<Escape>", lambda _: popup.destroy())
 
     def _clear_all(self):
         import tkinter.messagebox as mb, json

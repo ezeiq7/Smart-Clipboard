@@ -380,11 +380,12 @@ class Onboarding:
             ("Ctrl + C",         "saves clips automatically"),
             ("Ctrl + Alt + C",   "copies and pins instantly"),
             ("Ctrl + Shift + V", "opens quick launcher"),
+            ("Double Ctrl",      "opens Smart Clipboard"),
         ]
 
         ref = tk.Frame(card, bg=WHITE,
                        highlightbackground=BORDER, highlightthickness=1)
-        ref.place(relx=0.5, rely=0.52, anchor="center", width=385, height=100)
+        ref.place(relx=0.5, rely=0.52, anchor="center", width=385, height=138)
 
         for key, desc in shortcuts:
             row = tk.Frame(ref, bg=WHITE)
