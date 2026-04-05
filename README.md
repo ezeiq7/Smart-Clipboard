@@ -87,13 +87,15 @@ complex, too ugly, or charged too much.
 | `Ctrl + C` | Saves clips automatically |
 | `Ctrl + Alt + C` | Copies and pins selected text |
 | `Ctrl + Shift + V` | Opens quick-paste launcher |
-| `Ctrl + Shift + I` | Toggles private/incognito mode |
 | `Ctrl + Shift + E` | Toggles clipboard capture on/off |
+| `Ctrl + Shift + X` | Toggles private/incognito mode |
+| Double-tap `Ctrl` | Opens Smart Clipboard |
 | `↑ / ↓` | Navigate clip list |
 | `C` | Copy selected clip |
 | `P` | Pin selected clip |
 | `E` | Edit selected clip |
 | `T` | Tag selected clip |
+| `F` | Merge selected clips |
 | `M` | Mark as template |
 | `Delete` | Delete selected clip |
 | `Enter` | Copy and close window |
@@ -178,18 +180,6 @@ pip install -r requirements.txt
 # Run the app
 python main.py
 ```
-```
-
-**Then push everything:**
-```
-git add .
-git commit -m "Add source code — open source release"
-git push
-```
-
-After that go back to Reddit and reply to that comment:
-```
-Fair point! Source code is now available for review.
 
 ## Reporting Issues
 
