@@ -1,0 +1,5 @@
+pynput
+pyperclip
+Pillow
+pystray
+pywin32
