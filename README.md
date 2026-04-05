@@ -173,7 +173,7 @@ open Settings → disable auto-start, then delete the folder.
 git clone https://github.com/ezeiq7/Smart-Clipboard.git
 
 # Install dependencies
-pip install pynput pyperclip Pillow pystray pywin32
+pip install -r requirements.txt
 
 # Run the app
 python main.py
