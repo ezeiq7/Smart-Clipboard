@@ -147,8 +147,6 @@ Yes. Enable Private mode or turn off capture entirely when
 working with sensitive documents.
 
 **My antivirus flagged it — is it safe?**
-Yes. PyInstaller-built executables are sometimes flagged 
-by antivirus tools because they bundle a Python interpreter. 
 Yes. PyInstaller executables are sometimes flagged by 
 antivirus tools. You can verify Smart Clipboard is safe 
 by reviewing the full source code in this repository.
