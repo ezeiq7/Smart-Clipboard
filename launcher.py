@@ -4,26 +4,62 @@ import storage
 import clipboard
 from theme import *
 
+SMART_PASTE_OPTIONS = [
+    ("Plain",      "As copied"),
+    ("Clean",      "Fix spacing & quotes"),
+    ("No Breaks",  "Remove line breaks"),
+    ("Bullets",    "Bullet list"),
+    ("UPPER",      "UPPERCASE"),
+    ("lower",      "lowercase"),
+]
+
+
+def _transform(text: str, mode: str) -> str:
+    if mode == "Plain":
+        return text
+    if mode == "Clean":
+        import re
+        t = text
+        t = re.sub(r'[\u2018\u2019]', "'", t)   # smart single quotes
+        t = re.sub(r'[\u201c\u201d]', '"', t)   # smart double quotes
+        t = re.sub(r'\u2013|\u2014', '-', t)    # em/en dashes
+        t = re.sub(r'[ \t]+', ' ', t)           # collapse spaces
+        t = re.sub(r'\n{3,}', '\n\n', t)        # max 2 newlines
+        return t.strip()
+    if mode == "No Breaks":
+        return " ".join(text.split())
+    if mode == "Bullets":
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        return "\n".join(f"• {l}" for l in lines)
+    if mode == "UPPER":
+        return text.upper()
+    if mode == "lower":
+        return text.lower()
+    return text
+
 
 class QuickPasteLauncher:
-    # Width / height of the floating window
-    WIN_W = 500
-    WIN_H = 360
+    WIN_W    = 500
+    WIN_H    = 360
     MAX_CLIPS = 15
 
     def __init__(self, tk_root):
-        self._root        = tk_root
-        self._win         = None
-        self._prev_hwnd   = None
-        self._clips       = []
-        self._selected    = 0
-        self._search_var  = None
-        self._list_frame  = None
+        self._root            = tk_root
+        self._win             = None
+        self._prev_hwnd       = None
+        self._clips           = []
+        self._selected        = 0
+        self._search_var      = None
+        self._list_frame      = None
+        self._smart_bar       = None
+        self._smart_opt_idx   = 0
+        self._smart_mode      = False
+        self._help_card       = None
+        self._help_after      = None
 
     # ── Public entry point ─────────────────────────────────────────────────
 
     def open(self, prev_hwnd: int):
-        """Called from the main thread via root.after()."""
         if self._win and self._win.winfo_exists():
             self._close()
             return
@@ -42,11 +78,10 @@ class QuickPasteLauncher:
         win.attributes("-topmost", True)
         win.configure(bg=BORDER)
 
-        # Position centred on whichever monitor the cursor is on
         try:
             import win32api
             cx, cy = win32api.GetCursorPos()
-            mon = win32api.MonitorFromPoint((cx, cy), win32api.MONITOR_DEFAULTTONEAREST)
+            mon  = win32api.MonitorFromPoint((cx, cy), win32api.MONITOR_DEFAULTTONEAREST)
             info = win32api.GetMonitorInfo(mon)
             mx, my, mw, mh = (*info["Monitor"][:2],
                               info["Monitor"][2] - info["Monitor"][0],
@@ -60,22 +95,19 @@ class QuickPasteLauncher:
             y  = (sh - self.WIN_H) // 2 - 60
         win.geometry(f"{self.WIN_W}x{self.WIN_H}+{x}+{y}")
 
-        # 1px border effect via outer/inner frames
         outer = tk.Frame(win, bg=BORDER, padx=1, pady=1)
         outer.pack(fill="both", expand=True)
         inner = tk.Frame(outer, bg=BG)
         inner.pack(fill="both", expand=True)
 
-        # ── Accent top strip ──────────────────────────────────────────────
         tk.Frame(inner, bg=ACCENT, height=3).pack(fill="x")
 
         # ── Search bar ────────────────────────────────────────────────────
         search_wrap = tk.Frame(inner, bg=HEADER_BG, padx=12, pady=10)
         search_wrap.pack(fill="x")
 
-        icon = tk.Label(search_wrap, text="⌕", bg=HEADER_BG, fg=ACCENT,
-                        font=("Segoe UI", 13))
-        icon.pack(side="left", padx=(0, 8))
+        tk.Label(search_wrap, text="⌕", bg=HEADER_BG, fg=ACCENT,
+                 font=("Segoe UI", 13)).pack(side="left", padx=(0, 8))
 
         self._search_var = tk.StringVar()
         self._search_var.trace("w", self._on_search_change)
@@ -87,48 +119,105 @@ class QuickPasteLauncher:
         )
         self._search_entry.pack(side="left", fill="x", expand=True)
 
-        hint_lbl = tk.Label(search_wrap, text="Ctrl+Shift+V",
-                            bg=BORDER, fg=TEXT_GRAY,
-                            font=("Segoe UI", 8), padx=6, pady=2)
-        hint_lbl.pack(side="right")
+        tk.Label(search_wrap, text="Ctrl+Shift+V",
+                 bg=BORDER, fg=TEXT_GRAY,
+                 font=("Segoe UI", 8), padx=6, pady=2).pack(side="right")
 
-        # ── Separator ─────────────────────────────────────────────────────
         tk.Frame(inner, bg=BORDER, height=1).pack(fill="x")
 
         # ── Results list ──────────────────────────────────────────────────
-        self._list_frame = tk.Frame(inner, bg=BG)
-        self._list_frame.pack(fill="both", expand=True, padx=4, pady=4)
+        list_container = tk.Frame(inner, bg=BG)
+        list_container.pack(fill="both", expand=True, padx=4, pady=4)
+
+        self._canvas = tk.Canvas(list_container, bg=BG, highlightthickness=0, bd=0)
+        self._scrollbar = tk.Scrollbar(list_container, orient="vertical",
+                                       command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._scrollbar.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
+
+        self._list_frame = tk.Frame(self._canvas, bg=BG)
+        self._canvas_window = self._canvas.create_window((0, 0), window=self._list_frame, anchor="nw")
+
+        self._list_frame.bind("<Configure>", lambda _e: (
+            self._canvas.configure(scrollregion=self._canvas.bbox("all")),
+            self._canvas.itemconfig(self._canvas_window, width=self._canvas.winfo_width())
+        ))
+        self._canvas.bind("<Configure>", lambda e:
+            self._canvas.itemconfig(self._canvas_window, width=e.width))
+        self._canvas.bind("<MouseWheel>", lambda e:
+            self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+
+        # ── Smart paste bar (hidden until Enter pressed) ──────────────────
+        self._smart_bar = tk.Frame(inner, bg="#1E1E30")
+        self._smart_bar_btns = []
+        self._build_smart_bar()
 
         # ── Footer ────────────────────────────────────────────────────────
         tk.Frame(inner, bg=BORDER, height=1).pack(fill="x")
-        footer = tk.Frame(inner, bg=HEADER_BG, padx=12, pady=6)
-        footer.pack(fill="x")
-        tk.Label(footer, text="↑↓  navigate", bg=HEADER_BG, fg=TEXT_GRAY,
-                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 14))
-        tk.Label(footer, text="Enter  paste", bg=HEADER_BG, fg=TEXT_GRAY,
-                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 14))
-        tk.Label(footer, text="Esc  dismiss", bg=HEADER_BG, fg=TEXT_GRAY,
-                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 14))
-        tk.Label(footer, text="#tag  filter by tag", bg=HEADER_BG, fg=TEXT_GRAY,
-                 font=("Segoe UI", 8)).pack(side="left")
+        self._footer = tk.Frame(inner, bg=HEADER_BG, padx=12, pady=6)
+        self._footer.pack(fill="x")
+        self._footer_hint = tk.Label(self._footer, text="↑↓  navigate    Enter  smart paste    click  paste plain    Esc  dismiss",
+                                     bg=HEADER_BG, fg=TEXT_GRAY, font=("Segoe UI", 8))
+        self._footer_hint.pack(side="left")
+        help_btn = tk.Label(self._footer, text="?",
+                            font=("Segoe UI", 9, "bold"),
+                            bg=BORDER, fg=TEXT_GRAY,
+                            padx=7, pady=2, cursor="hand2")
+        help_btn.pack(side="right")
+        help_btn.bind("<Enter>", lambda e: self._schedule_help(help_btn))
+        help_btn.bind("<Leave>", lambda e: self._cancel_help())
 
         # ── Key bindings ──────────────────────────────────────────────────
-        win.bind("<Escape>", lambda e: self._close())
-        win.bind("<Return>", lambda e: self._confirm_paste())
-        win.bind("<Up>",     lambda e: (self._move_selection(-1), "break"))
-        win.bind("<Down>",   lambda e: (self._move_selection(1),  "break"))
+        win.bind("<Escape>",  lambda e: self._on_escape())
+        win.bind("<Return>",  lambda e: self._on_enter())
+        win.bind("<Up>",      lambda e: self._on_up())
+        win.bind("<Down>",    lambda e: self._on_down())
+        win.bind("<Left>",    lambda e: self._smart_nav(-1))
+        win.bind("<Right>",   lambda e: self._smart_nav(+1))
         win.bind("<FocusOut>", self._on_focus_out)
 
         self._win = win
 
+    def _build_smart_bar(self):
+        tk.Frame(self._smart_bar, bg=BORDER, height=1).pack(fill="x")
+        label = tk.Label(self._smart_bar, text="Smart Paste  —  choose format:",
+                         bg="#1E1E30", fg=TEXT_GRAY,
+                         font=("Segoe UI", 8), pady=4)
+        label.pack()
+
+        btn_row = tk.Frame(self._smart_bar, bg="#1E1E30")
+        btn_row.pack(pady=(0, 6))
+
+        self._smart_bar_btns = []
+        for i, (name, tip) in enumerate(SMART_PASTE_OPTIONS):
+            btn = tk.Label(btn_row, text=name,
+                           font=("Segoe UI", 8, "bold"),
+                           padx=10, pady=5, cursor="hand2")
+            btn.pack(side="left", padx=3)
+            btn.bind("<Button-1>", lambda e, idx=i: self._smart_click(idx))
+            self._smart_bar_btns.append(btn)
+
+        hint = tk.Label(self._smart_bar,
+                        text="← → navigate    Enter confirm    Esc cancel",
+                        bg="#1E1E30", fg=TEXT_GRAY, font=("Segoe UI", 7), pady=2)
+        hint.pack()
+
+    def _refresh_smart_bar(self):
+        for i, btn in enumerate(self._smart_bar_btns):
+            if i == self._smart_opt_idx:
+                btn.config(bg=ACCENT, fg="white")
+            else:
+                btn.config(bg=BORDER, fg=TEXT_DARK)
+
     # ── Data / filtering ──────────────────────────────────────────────────
 
     def _on_search_change(self, *_):
+        self._hide_smart_bar()
         self._load_clips(self._search_var.get() if self._search_var else "")
 
     def _load_clips(self, query: str):
-        all_clips = storage.load_clips()
-        # Pinned first, then rest — preserve original sort order within each group
+        all_clips  = storage.load_clips()
         pinned     = [c for c in all_clips if c.get("pinned")]
         unpinned   = [c for c in all_clips if not c.get("pinned")]
         candidates = pinned + unpinned
@@ -151,18 +240,13 @@ class QuickPasteLauncher:
         self._render_list()
 
     def _score(self, query: str, text: str) -> int:
-        q  = query.lower()
-        t  = text.lower()
-        # Exact substring → highest priority
+        q = query.lower(); t = text.lower()
         if q in t:
             return 100 + max(0, 50 - t.index(q))
-        # Sequential character match (fuzzy)
-        qi = 0
-        sc = 0
+        qi = sc = 0
         for ch in t:
             if qi < len(q) and ch == q[qi]:
-                qi += 1
-                sc += 1
+                qi += 1; sc += 1
         return sc if qi == len(q) else 0
 
     # ── List rendering ────────────────────────────────────────────────────
@@ -183,62 +267,125 @@ class QuickPasteLauncher:
 
     def _make_row(self, idx: int, clip: dict):
         selected = idx == self._selected
-        row_bg   = ACCENT     if selected else (PINNED_ROW if clip.get("pinned") else WHITE)
-        row_fg   = "#FFFFFF"  if selected else TEXT_DARK
+        row_bg   = ACCENT    if selected else (PINNED_ROW if clip.get("pinned") else WHITE)
+        row_fg   = "#FFFFFF" if selected else TEXT_DARK
 
         row = tk.Frame(self._list_frame, bg=row_bg, cursor="hand2")
         row.pack(fill="x", padx=2, pady=1)
 
-        # Pin indicator
         pin_lbl = tk.Label(row, text="📌" if clip.get("pinned") else "   ",
                            bg=row_bg, fg=PIN if not selected else "#FFFFFF",
                            font=("Segoe UI", 9), padx=6, pady=6)
         pin_lbl.pack(side="left")
 
-        # Clip type icon
         is_image = clip.get("type") == "image"
-        type_lbl = tk.Label(row,
-                            text="🖼" if is_image else "◆",
+        type_lbl = tk.Label(row, text="🖼" if is_image else "◆",
                             bg=row_bg, fg=row_fg,
                             font=("Segoe UI", 9), padx=4)
         type_lbl.pack(side="left")
 
-        # Preview text
         if is_image:
             preview = "Image"
         else:
-            raw = clip["text"].replace("\n", " ").replace("\t", " ")
+            raw     = clip["text"].replace("\n", " ").replace("\t", " ")
             preview = raw[:58] + "…" if len(raw) > 58 else raw
 
         text_lbl = tk.Label(row, text=preview,
                             bg=row_bg, fg=row_fg,
-                            font=("Segoe UI", 10),
-                            anchor="w", padx=4)
+                            font=("Segoe UI", 10), anchor="w", padx=4)
         text_lbl.pack(side="left", fill="x", expand=True)
 
-        # Tag badge (right side)
         tag = clip.get("tag")
         if tag:
             tag_color = get_tag_color(tag) if not selected else "#FFFFFF"
-            tag_lbl = tk.Label(row, text=f" {tag} ",
-                               bg=row_bg, fg=tag_color,
-                               font=("Segoe UI", 8, "bold"), padx=6, pady=4)
+            tag_lbl   = tk.Label(row, text=f" {tag} ",
+                                 bg=row_bg, fg=tag_color,
+                                 font=("Segoe UI", 8, "bold"), padx=6, pady=4)
             tag_lbl.pack(side="right", padx=(0, 6))
 
-        # Click on any part of the row → select + paste
+        # Single click → paste plain immediately
         for widget in (row, pin_lbl, type_lbl, text_lbl):
             widget.bind("<Button-1>", lambda e, i=idx: self._click_row(i))
         if tag:
             tag_lbl.bind("<Button-1>", lambda e, i=idx: self._click_row(i))
 
-        # Hover highlight (only when not selected)
         if not selected:
             hover_bg = "#2F2F4A"
             for widget in (row, pin_lbl, type_lbl, text_lbl):
-                widget.bind("<Enter>", lambda e, r=row, wl=(row, pin_lbl, type_lbl, text_lbl):
+                widget.bind("<Enter>", lambda e, wl=(row, pin_lbl, type_lbl, text_lbl):
                             [w.config(bg=hover_bg) for w in wl])
-                widget.bind("<Leave>", lambda e, r=row, wl=(row, pin_lbl, type_lbl, text_lbl), bg=row_bg:
+                widget.bind("<Leave>", lambda e, wl=(row, pin_lbl, type_lbl, text_lbl), bg=row_bg:
                             [w.config(bg=bg) for w in wl])
+
+    # ── Smart paste bar ────────────────────────────────────────────────────
+
+    def _show_smart_bar(self):
+        if not self._clips or self._selected >= len(self._clips):
+            return
+        clip = self._clips[self._selected]
+        if clip.get("type") == "image":
+            self._confirm_paste_plain()
+            return
+        self._smart_mode    = True
+        self._smart_opt_idx = 0
+        self._refresh_smart_bar()
+        self._smart_bar.pack(fill="x", before=self._footer)
+        self._footer_hint.config(text="← → navigate    Enter confirm    Esc cancel")
+        # Grow window to fit the bar
+        if self._win and self._win.winfo_exists():
+            self._win.geometry(f"{self.WIN_W}x{self.WIN_H + 80}")
+
+    def _hide_smart_bar(self):
+        self._smart_mode = False
+        self._smart_bar.pack_forget()
+        self._footer_hint.config(
+            text="↑↓  navigate    Enter  smart paste    click  paste plain    Esc  dismiss")
+        # Shrink window back
+        if self._win and self._win.winfo_exists():
+            self._win.geometry(f"{self.WIN_W}x{self.WIN_H}")
+
+    def _smart_nav(self, direction: int):
+        if not self._smart_mode:
+            return
+        self._smart_opt_idx = (self._smart_opt_idx + direction) % len(SMART_PASTE_OPTIONS)
+        self._refresh_smart_bar()
+
+    def _smart_click(self, idx: int):
+        self._smart_opt_idx = idx
+        self._execute_smart_paste()
+
+    def _execute_smart_paste(self):
+        if not self._clips or self._selected >= len(self._clips):
+            return
+        clip = self._clips[self._selected]
+        mode = SMART_PASTE_OPTIONS[self._smart_opt_idx][0]
+        text = _transform(clip["text"], mode)
+        self._close()
+        self._root.after(80, lambda: self._do_paste_text(text))
+
+    # ── Key handlers ──────────────────────────────────────────────────────
+
+    def _on_escape(self):
+        if self._smart_mode:
+            self._hide_smart_bar()
+        else:
+            self._close()
+
+    def _on_enter(self):
+        if self._smart_mode:
+            self._execute_smart_paste()
+        else:
+            self._show_smart_bar()
+
+    def _on_up(self):
+        if self._smart_mode:
+            return
+        self._move_selection(-1)
+
+    def _on_down(self):
+        if self._smart_mode:
+            return
+        self._move_selection(1)
 
     # ── Navigation & selection ─────────────────────────────────────────────
 
@@ -247,14 +394,38 @@ class QuickPasteLauncher:
             return
         self._selected = (self._selected + direction) % len(self._clips)
         self._render_list()
+        self._scroll_to_selected()
+
+    def _scroll_to_selected(self):
+        try:
+            rows = [w for w in self._list_frame.winfo_children() if isinstance(w, tk.Frame)]
+            if not rows or self._selected >= len(rows):
+                return
+            row = rows[self._selected]
+            self._list_frame.update_idletasks()
+            row_y    = row.winfo_y()
+            row_h    = row.winfo_height()
+            canvas_h = self._canvas.winfo_height()
+            total_h  = self._list_frame.winfo_height()
+            if total_h <= canvas_h:
+                return
+            top    = row_y / total_h
+            bottom = (row_y + row_h) / total_h
+            cur_top, cur_bot = self._canvas.yview()
+            if top < cur_top:
+                self._canvas.yview_moveto(top)
+            elif bottom > cur_bot:
+                self._canvas.yview_moveto(bottom - (canvas_h / total_h))
+        except Exception:
+            pass
 
     def _click_row(self, idx: int):
         self._selected = idx
-        self._confirm_paste()
+        self._confirm_paste_plain()
 
     # ── Paste logic ───────────────────────────────────────────────────────
 
-    def _confirm_paste(self):
+    def _confirm_paste_plain(self):
         if not self._clips or self._selected >= len(self._clips):
             return
         clip = self._clips[self._selected]
@@ -262,37 +433,120 @@ class QuickPasteLauncher:
         self._root.after(80, lambda: self._do_paste(clip))
 
     def _do_paste(self, clip: dict):
-        # 1. Set clipboard content
         if clip.get("type") == "image":
             clipboard.set_clipboard_image(clip["text"].strip())
         else:
             clipboard.set_clipboard(clip["text"].strip())
-
-        # 2. Restore focus to the window that was active before the launcher
         if self._prev_hwnd:
             try:
                 import win32gui
                 win32gui.SetForegroundWindow(self._prev_hwnd)
             except Exception:
                 pass
+        self._root.after(80, self._simulate_paste)
 
-        # 3. Simulate Ctrl+V after focus has settled
+    def _do_paste_text(self, text: str):
+        clipboard.set_clipboard(text)
+        if self._prev_hwnd:
+            try:
+                import win32gui
+                win32gui.SetForegroundWindow(self._prev_hwnd)
+            except Exception:
+                pass
         self._root.after(80, self._simulate_paste)
 
     def _simulate_paste(self):
         try:
             from pynput.keyboard import Controller, Key
             kb = Controller()
-            kb.press(Key.ctrl)
-            kb.press('v')
-            kb.release('v')
-            kb.release(Key.ctrl)
+            kb.press(Key.ctrl); kb.press('v')
+            kb.release('v');    kb.release(Key.ctrl)
         except Exception:
             pass
 
     # ── Window lifecycle ──────────────────────────────────────────────────
 
+    def _schedule_help(self, btn):
+        self._cancel_help()
+        self._help_after = self._win.after(150, lambda: self._show_help(btn))
+
+    def _cancel_help(self):
+        if self._help_after:
+            self._win.after_cancel(self._help_after)
+            self._help_after = None
+        if self._help_card and self._help_card.winfo_exists():
+            self._help_card.destroy()
+            self._help_card = None
+
+    def _show_help(self, btn):
+        if self._help_card and self._help_card.winfo_exists():
+            return
+        card = tk.Toplevel(self._win)
+        card.overrideredirect(True)
+        card.attributes("-topmost", True)
+        card.configure(bg=ACCENT)
+        self._help_card = card
+
+        outer = tk.Frame(card, bg=ACCENT, padx=1, pady=1)
+        outer.pack(fill="both", expand=True)
+        inner = tk.Frame(outer, bg=HEADER_BG, padx=14, pady=10)
+        inner.pack(fill="both", expand=True)
+
+        tk.Label(inner, text="Launcher Shortcuts",
+                 font=("Segoe UI", 9, "bold"),
+                 bg=HEADER_BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
+        tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=(0, 8))
+
+        sections = [
+            ("Navigation", [
+                ("↑ ↓",          "Navigate clips"),
+                ("← →",          "Navigate smart paste options"),
+                ("Click",        "Paste plain instantly"),
+            ]),
+            ("Paste", [
+                ("Enter",        "Open Smart Paste bar"),
+                ("Enter (bar)",  "Paste with selected format"),
+                ("Esc (bar)",    "Close Smart Paste bar"),
+                ("Esc",          "Dismiss launcher"),
+            ]),
+            ("Smart Paste Formats", [
+                ("Plain",        "Paste as copied"),
+                ("Clean",        "Fix quotes, dashes & spaces"),
+                ("No Breaks",    "Remove all line breaks"),
+                ("Bullets",      "Convert lines to bullet list"),
+                ("UPPER",        "UPPERCASE"),
+                ("lower",        "lowercase"),
+            ]),
+            ("Search", [
+                ("#tag",         "Filter clips by tag"),
+                ("any text",     "Fuzzy search clips"),
+            ]),
+        ]
+
+        for section, rows in sections:
+            tk.Label(inner, text=section.upper(),
+                     font=("Segoe UI", 7, "bold"),
+                     bg=HEADER_BG, fg=TEXT_GRAY).pack(anchor="w", pady=(6, 2))
+            for key, desc in rows:
+                row = tk.Frame(inner, bg=HEADER_BG)
+                row.pack(fill="x", pady=1)
+                tk.Label(row, text=key, font=("Segoe UI", 9, "bold"),
+                         bg=HEADER_BG, fg=TEXT_DARK,
+                         width=16, anchor="w").pack(side="left")
+                tk.Label(row, text=desc, font=("Segoe UI", 9),
+                         bg=HEADER_BG, fg=TEXT_GRAY,
+                         anchor="w").pack(side="left")
+
+        card.update_idletasks()
+        cw = card.winfo_reqwidth()
+        ch = card.winfo_reqheight()
+        x  = btn.winfo_rootx() + btn.winfo_width() - cw
+        y  = btn.winfo_rooty() - ch - 6
+        card.geometry(f"+{x}+{y}")
+        card.bind("<Leave>", lambda _e: self._cancel_help())
+
     def _close(self):
+        self._smart_mode = False
         if self._win and self._win.winfo_exists():
             self._win.destroy()
         self._win = None

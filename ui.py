@@ -128,16 +128,11 @@ class ShortcutsCard:
             ("T",  "Tag selected"),
             ("M",  "Mark / unmark template"),
             ("F",  "Merge selected clips"),
+            ("S",  "Focus search bar"),
             ("E",  "Edit selected"),
             ("Del","Delete selected"),
             ("↑ ↓","Navigate"),
             ("↵",  "Copy & close"),
-        ]),
-        ("Launcher",  [
-            ("#tag",   "Filter by tag"),
-            ("↑ ↓",    "Navigate"),
-            ("↵",      "Paste into app"),
-            ("Esc",    "Dismiss"),
         ]),
     ]
 
@@ -236,7 +231,7 @@ class App:
             launcher_callback=lambda hwnd: self.root.after(0, lambda: self._launcher.open(hwnd)) if storage.load_settings().get("global_shortcuts", True) else None,
             toggle_callback=lambda: self.root.after(0, self._toggle_active) if storage.load_settings().get("global_shortcuts", True) else None,
             incognito_callback=lambda: self.root.after(0, self._toggle_incognito) if storage.load_settings().get("global_shortcuts", True) else None,
-            show_callback=lambda: self.root.after(0, self._show_window) if storage.load_settings().get("global_shortcuts", True) else None,
+            show_callback=lambda: self.root.after(0, self._show_window) if (self._active and storage.load_settings().get("global_shortcuts", True)) else None,
         )
         self._add_to_startup()
         if not storage.load_settings().get("onboarding_complete"):
@@ -475,14 +470,19 @@ class App:
         search_wrap = tk.Frame(bar, bg=WHITE, padx=8, pady=4,
                                highlightbackground=BORDER, highlightthickness=1)
         search_wrap.pack(side="left", padx=(0, 18))
-        search_entry = tk.Entry(search_wrap, textvariable=self.search_var, width=34,
+        self._search_entry = tk.Entry(search_wrap, textvariable=self.search_var, width=34,
                                 font=("Segoe UI", 10), relief="flat", bd=0,
                                 bg=WHITE, fg=TEXT_DARK, insertbackground=TEXT_DARK)
-        search_entry.pack()
-        search_entry.bind("<FocusIn>",
+        self._search_entry.pack()
+        self._search_entry.bind("<FocusIn>",
                           lambda _: search_wrap.config(highlightbackground=ACCENT))
-        search_entry.bind("<FocusOut>",
+        self._search_entry.bind("<FocusOut>",
                           lambda _: search_wrap.config(highlightbackground=BORDER))
+        self._search_entry.bind("<Escape>", lambda _: (
+            self.search_var.set(""),
+            self.listbox.focus_set()
+        ))
+        self._search_entry.bind("<Down>", lambda _: self._search_jump_to_list())
 
         # Tag filter
         tk.Label(bar, text="Tag", bg=HEADER_BG, fg=TEXT_GRAY,
@@ -564,14 +564,17 @@ class App:
         self.listbox.bind("<<ListboxSelect>>", self._on_select)
         self.listbox.bind("<Delete>", lambda e: self._delete_selected())
         # Keyboard shortcuts active when listbox has focus
-        self.listbox.bind("<Up>",     lambda _e: self._kb_nav(-1) or "break")
-        self.listbox.bind("<Down>",   lambda _e: self._kb_nav(+1) or "break")
+        self.listbox.bind("<Up>",           lambda _e: self._kb_nav(-1) or "break")
+        self.listbox.bind("<Down>",         lambda _e: self._kb_nav(+1) or "break")
+        self.listbox.bind("<Control-Up>",   lambda _e: self._kb_nav_select(-1) or "break")
+        self.listbox.bind("<Control-Down>", lambda _e: self._kb_nav_select(+1) or "break")
         self.listbox.bind("<c>",      lambda _e: self._copy_selected())
         self.listbox.bind("<p>",      lambda _e: self._toggle_pin())
         self.listbox.bind("<t>",      lambda _e: self._show_tag_menu())
         self.listbox.bind("<m>",      lambda _e: self._toggle_template())
         self.listbox.bind("<e>",      lambda _e: self._edit_selected())
         self.listbox.bind("<f>",      lambda _e: self._merge_clips())
+        self.listbox.bind("<s>",      lambda _e: self._focus_search())
         self.listbox.bind("<Return>", lambda _e: self._copy_and_close())
 
         # Divider
@@ -697,7 +700,7 @@ class App:
         if self._incognito:
             if not isinstance(content, Image.Image):
                 if len(content) >= 3:
-                    text = content if _looks_like_code(content) else " ".join(content.split())
+                    text = content
                     if not any(c["text"] == text for c in self._incognito_clips):
                         self._incognito_clips.insert(0, {"text": text, "type": "text", "incognito": True})
                     self._refresh_list()
@@ -715,16 +718,13 @@ class App:
                 return
             if _is_excluded_app():
                 return
-            # Detect code — preserve formatting, otherwise normalize
+            # Detect code — auto-tag, otherwise save raw
             if _looks_like_code(content):
-                text = content
-                storage.save_clip(text, clip_type="text")
-                storage.set_tag(text, "code")
+                storage.save_clip(content, clip_type="text")
+                storage.set_tag(content, "code")
                 self._refresh_list()
                 return
-            else:
-                text = " ".join(content.split())
-            storage.save_clip(text, clip_type="text")
+            storage.save_clip(content, clip_type="text")
             self._refresh_list()
         if self.root.state() == "withdrawn":
             self.root.iconify()
@@ -842,10 +842,65 @@ class App:
         self.listbox.focus_set()
         self.listbox.event_generate("<<ListboxSelect>>")
 
+    def _kb_nav_select(self, direction):
+        """Ctrl+Down extends selection, Ctrl+Up shrinks it from the bottom."""
+        if isinstance(self.root.focus_get(), tk.Entry):
+            return
+        n = self.listbox.size()
+        if n == 0:
+            return
+        sel = self.listbox.curselection()
+        if not sel:
+            self.listbox.selection_set(0)
+            self.listbox.see(0)
+            self.listbox.focus_set()
+            return
+        if direction == 1:
+            # Extend downward
+            new_idx = min(n - 1, sel[-1] + 1)
+            self.listbox.selection_set(new_idx)
+            self.listbox.see(new_idx)
+        else:
+            # Shrink from the bottom (deselect last selected item)
+            if len(sel) > 1:
+                self.listbox.selection_clear(sel[-1])
+                self.listbox.see(sel[-1] - 1)
+            else:
+                # Already single item — move up normally
+                new_idx = max(0, sel[0] - 1)
+                self.listbox.selection_clear(0, tk.END)
+                self.listbox.selection_set(new_idx)
+                self.listbox.see(new_idx)
+        self.listbox.focus_set()
+        self.listbox.event_generate("<<ListboxSelect>>")
+
     def _copy_and_close(self):
         """Copy the selected clip then hide the window — keeps you in your workflow."""
         self._copy_selected()
         self._hide_window()
+
+    def _highlight_merged(self, merged_text):
+        storage.set_tag(merged_text, "merged")
+        self._refresh_list()
+        clips = self._get_current_clips()
+        for i, c in enumerate(clips):
+            if c.get("text") == merged_text:
+                self.listbox.selection_clear(0, tk.END)
+                self.listbox.selection_set(i)
+                self.listbox.see(i)
+                break
+
+    def _focus_search(self):
+        self._search_entry.focus_set()
+        self._search_entry.icursor(tk.END)
+
+    def _search_jump_to_list(self):
+        if self.listbox.size() == 0:
+            return
+        if not self.listbox.curselection():
+            self.listbox.selection_set(0)
+        self.listbox.see(self.listbox.curselection()[0])
+        self.listbox.focus_set()
 
     # ── List actions ───────────────────────────────────────────────────────
 
@@ -1058,6 +1113,7 @@ class App:
         px = self.root.winfo_rootx() + (self.root.winfo_width() - w) // 2
         py = self.root.winfo_rooty() + (self.root.winfo_height() - h) // 2
         popup.geometry(f"{w}x{h}+{px}+{py}")
+        popup.focus_force()
 
         tk.Label(popup, text=f"Merge {len(texts)} clips",
                  font=("Segoe UI", 11, "bold"),
@@ -1065,8 +1121,10 @@ class App:
         tk.Label(popup, text="Choose a separator:",
                  font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY).pack()
 
-        sep_var = tk.StringVar(value="Newline")
-        custom_var = tk.StringVar()
+        options     = ["Newline", "Comma", "Space", "Custom"]
+        sep_var     = tk.StringVar(value="Newline")
+        custom_var  = tk.StringVar()
+        _option_idx = [0]  # mutable for closure
 
         options_frame = tk.Frame(popup, bg=HEADER_BG)
         options_frame.pack(pady=10)
@@ -1084,12 +1142,19 @@ class App:
             else:
                 custom_entry.grid_remove()
 
-        for col, label in enumerate(["Newline", "Comma", "Space", "Custom"]):
+        for col, label in enumerate(options):
             rb = tk.Radiobutton(options_frame, text=label, variable=sep_var, value=label,
                                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_DARK,
                                 selectcolor=HEADER_BG, activebackground=HEADER_BG,
                                 command=on_option_change)
             rb.grid(row=0, column=col, padx=6)
+
+        def _arrow_nav(direction):
+            _option_idx[0] = (_option_idx[0] + direction) % len(options)
+            sep_var.set(options[_option_idx[0]])
+            on_option_change()
+            if sep_var.get() != "Custom":
+                popup.focus_set()
 
         def confirm():
             import pyperclip
@@ -1100,7 +1165,10 @@ class App:
             else:                     sep = custom_var.get()
             merged = sep.join(texts)
             pyperclip.copy(merged)
+            storage.save_clip(merged, clip_type="text")
             popup.destroy()
+            self._refresh_list()
+            self._highlight_merged(merged)
             self._show_toast(f"Merged {len(texts)} clips ✅")
 
         tk.Button(popup, text="Merge & Copy",
@@ -1108,8 +1176,10 @@ class App:
                   bg=ACCENT, fg="white", relief="flat",
                   padx=20, pady=7, cursor="hand2", bd=0,
                   command=confirm).pack(pady=(6, 0))
-        popup.bind("<Return>", lambda _: confirm())
-        popup.bind("<Escape>", lambda _: popup.destroy())
+        popup.bind("<Return>",  lambda _: confirm())
+        popup.bind("<Escape>",  lambda _: popup.destroy())
+        popup.bind("<Left>",    lambda _: _arrow_nav(-1))
+        popup.bind("<Right>",   lambda _: _arrow_nav(+1))
 
     def _clear_all(self):
         import tkinter.messagebox as mb, json

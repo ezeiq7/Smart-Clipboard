@@ -52,12 +52,9 @@ def _launcher_hotkey_thread(launcher_callback):
 def _on_press(key, pin_callback=None, show_callback=None):
     global _last_ctrl_time
     try:
-        _pressed.add(key)
-        ctrl = keyboard.Key.ctrl   in _pressed or keyboard.Key.ctrl_l  in _pressed or keyboard.Key.ctrl_r  in _pressed
-        alt  = keyboard.Key.alt    in _pressed or keyboard.Key.alt_l   in _pressed or keyboard.Key.alt_r   in _pressed
-        c    = any((hasattr(k, 'vk') and k.vk == 67) or (hasattr(k, 'char') and k.char in ('c', 'C')) for k in _pressed)
-
-        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+        is_ctrl = key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r)
+        # Only count a fresh tap — ignore key-repeat events while holding
+        if is_ctrl and key not in _pressed:
             now = time.time()
             if now - _last_ctrl_time < 0.3:
                 if show_callback:
@@ -65,6 +62,11 @@ def _on_press(key, pin_callback=None, show_callback=None):
                 _last_ctrl_time = 0.0
             else:
                 _last_ctrl_time = now
+
+        _pressed.add(key)
+        ctrl = keyboard.Key.ctrl   in _pressed or keyboard.Key.ctrl_l  in _pressed or keyboard.Key.ctrl_r  in _pressed
+        alt  = keyboard.Key.alt    in _pressed or keyboard.Key.alt_l   in _pressed or keyboard.Key.alt_r   in _pressed
+        c    = any((hasattr(k, 'vk') and k.vk == 67) or (hasattr(k, 'char') and k.char in ('c', 'C')) for k in _pressed)
 
         if ctrl and alt and c:
             if pin_callback:
@@ -80,10 +82,31 @@ def _on_release(key):
 
 # ── Clipboard polling ─────────────────────────────────────────────────────
 
-def _poll_clipboard(callback):
+_SNIPPING_TOOLS = {"snippingtool.exe", "screenclippinghost.exe", "screensketch.exe"}
+
+def _get_clipboard_owner_name():
+    """Return the exe name of the process that last wrote to the clipboard."""
+    try:
+        import psutil
+        hwnd = ctypes.windll.user32.GetClipboardOwner()
+        if not hwnd:
+            return ""
+        pid = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return psutil.Process(pid.value).name().lower()
+    except Exception:
+        return ""
+
+def _clipboard_listener(callback):
     global _last_clip
     while True:
         try:
+            # Check who owns the clipboard BEFORE reading it
+            owner = _get_clipboard_owner_name()
+            if owner in _SNIPPING_TOOLS:
+                # Let Snipping Tool finish showing its popup, then read
+                time.sleep(1.5)
+
             from PIL import ImageGrab
             img = ImageGrab.grabclipboard()
             if img is not None:
@@ -105,7 +128,7 @@ def _poll_clipboard(callback):
 # ── Entry point ───────────────────────────────────────────────────────────
 
 def start_listener(save_callback, pin_callback=None, launcher_callback=None, toggle_callback=None, incognito_callback=None, show_callback=None):
-    threading.Thread(target=_poll_clipboard, args=(save_callback,), daemon=True).start()
+    threading.Thread(target=_clipboard_listener, args=(save_callback,), daemon=True).start()
 
     def run_pynput():
         with keyboard.Listener(

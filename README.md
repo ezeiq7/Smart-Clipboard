@@ -9,11 +9,18 @@
 Everything you copy is saved, searchable, and one shortcut away.
 No accounts. No internet. Everything stays on your device.
 
-[![Download](https://img.shields.io/badge/Download-v1.0.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
+[![Download](https://img.shields.io/badge/Download-v1.1.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![License](https://img.shields.io/badge/License-Source%20Available-orange?style=for-the-badge)](LICENSE)
 
-![Smart Clipboard Screenshot](screenshot.png)
+### App Overview
+![App Overview](demo1.gif)
+
+### Core Features
+![Core Features](demo2.gif)
+
+### Smart Paste
+![Smart Paste](demo3.gif)
 
 </div>
 
@@ -21,11 +28,11 @@ No accounts. No internet. Everything stays on your device.
 
 ## What is Smart Clipboard?
 
-Smart Clipboard is a free Windows clipboard manager that silently 
-saves everything you copy and lets you access it instantly — 
+Smart Clipboard is a free Windows clipboard manager that silently
+saves everything you copy and lets you access it instantly —
 without ever switching apps.
 
-Built because every existing clipboard manager was either too 
+Built because every existing clipboard manager was either too
 complex, too ugly, or charged too much.
 
 ---
@@ -34,32 +41,25 @@ complex, too ugly, or charged too much.
 
 ### Core
 - 📋 **Auto-capture** — everything you copy is saved automatically
-- 🔍 **Instant search** — find any clip in milliseconds  
+- 🔍 **Instant search** — find any clip in milliseconds
 - 📌 **Pin clips** — keep important clips at the top forever
 - 🏷️ **Tags** — colour-coded organisation for your clips
 - 🖼️ **Image support** — screenshots and images saved with preview
+- 🔎 **Auto code detection** — code clips are automatically tagged and formatting is preserved
 
 ### Power Features
-- ⚡ **Quick-paste launcher** — press `Ctrl+Shift+V` anywhere for 
-  an instant floating search palette. No app switching needed.
-- ⟨⟩ **Templates** — save clips with `{placeholders}` that fill 
-  in on demand. Perfect for repetitive emails and messages.
-- 🔒 **Private mode** — clips stay in memory only, never written 
-  to disk. Clears automatically when you're done.
-- 🎨 **Syntax highlighting** — code clips display with colour 
-  highlighting in the preview panel.
-- ⊕ **Merge clips** — select multiple clips and merge 
-  them with a custom separator into one paste
-- ⌨️ **Double-tap Ctrl** — open the launcher instantly 
-  without memorising shortcuts
+- ⚡ **Quick-paste launcher** — press `Ctrl+Shift+V` anywhere for an instant floating search palette with fuzzy search. No app switching needed.
+- ✨ **Smart Paste** — when pasting from the launcher, choose how to paste: Plain, Clean (fix quotes & spacing), No Breaks, Bullet List, UPPERCASE, or lowercase. One keystroke, perfect output.
+- ⟨⟩ **Templates** — save clips with `{placeholders}` that fill in on demand. Perfect for repetitive emails and messages.
+- 🔒 **Private mode** — clips stay in memory only, never written to disk. Clears automatically when you're done.
+- ⊕ **Merge clips** — select multiple clips and merge them with a custom separator (newline, comma, space, or custom) into one paste.
+- ⌨️ **Double-tap Ctrl** — open Smart Clipboard instantly from anywhere without memorising shortcuts.
+- 🎨 **Syntax highlighting** — code clips display with colour highlighting in the preview panel.
 
 ### Privacy & Safety
-- 🛡️ **Sensitive content filter** — passwords, credit cards and 
-  SSNs are automatically detected and never saved
-- 🚫 **Excluded apps** — configure apps like password managers 
-  to never be captured
-- 📵 **Zero telemetry** — no internet connection, no tracking, 
-  no accounts ever
+- 🛡️ **Sensitive content filter** — passwords, credit cards and SSNs are automatically detected and never saved
+- 🚫 **Excluded apps** — configure apps like password managers to never be captured
+- 📵 **Zero telemetry** — no internet connection, no tracking, no accounts ever
 
 ---
 
@@ -68,11 +68,10 @@ complex, too ugly, or charged too much.
 **No installer needed — just download and run.**
 
 1. Go to [Releases](https://github.com/ezeiq7/smart-clipboard/releases/latest)
-2. Download both `Smart Clipboard.exe` and `SmartClipboard_1.ico`
-3. Put both files in the same folder anywhere on your PC
-4. Run `Smart Clipboard.exe` once
-5. Follow the 30-second onboarding
-6. Done — the app starts automatically with Windows from now on
+2. Download `Smart Clipboard.exe`
+3. Place it anywhere on your PC
+4. Run it once and follow the 30-second onboarding
+5. Done — the app starts automatically with Windows from now on
 
 ### Requirements
 - Windows 10 or Windows 11
@@ -82,6 +81,8 @@ complex, too ugly, or charged too much.
 
 ## Keyboard Shortcuts
 
+### Main App
+
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl + C` | Saves clips automatically |
@@ -90,9 +91,11 @@ complex, too ugly, or charged too much.
 | `Ctrl + Shift + E` | Toggles clipboard capture on/off |
 | `Ctrl + Shift + X` | Toggles private/incognito mode |
 | Double-tap `Ctrl` | Opens Smart Clipboard |
+| `S` | Focus search bar |
 | `↑ / ↓` | Navigate clip list |
+| `Ctrl + ↑ / ↓` | Extend/shrink multi-selection |
 | `C` | Copy selected clip |
-| `P` | Pin selected clip |
+| `P` | Pin / unpin selected clip |
 | `E` | Edit selected clip |
 | `T` | Tag selected clip |
 | `F` | Merge selected clips |
@@ -100,6 +103,31 @@ complex, too ugly, or charged too much.
 | `Delete` | Delete selected clip |
 | `Enter` | Copy and close window |
 | `Escape` | Hide to tray |
+
+### Quick-Paste Launcher
+
+| Shortcut | Action |
+|----------|--------|
+| `↑ / ↓` | Navigate clips |
+| `Enter` | Open Smart Paste bar |
+| `← / →` | Navigate Smart Paste options |
+| `Enter` (in bar) | Paste with selected format |
+| `Esc` (in bar) | Close Smart Paste bar |
+| Click | Paste plain instantly |
+| `Esc` | Dismiss launcher |
+| `#tag` | Filter clips by tag |
+| any text | Fuzzy search clips |
+
+### Smart Paste Formats
+
+| Format | What it does |
+|--------|-------------|
+| Plain | Paste exactly as copied |
+| Clean | Fix smart quotes, dashes, collapse spaces |
+| No Breaks | Remove all line breaks into one line |
+| Bullets | Convert each line into a bullet point |
+| UPPER | Convert to UPPERCASE |
+| lower | Convert to lowercase |
 
 ---
 
@@ -135,26 +163,44 @@ Open settings via the ⚙ gear icon in the toolbar:
 ## FAQ
 
 **Will this slow down my PC?**
-No. Smart Clipboard runs as a lightweight background process 
+No. Smart Clipboard runs as a lightweight background process
 and uses minimal CPU and memory.
 
 **Is my clipboard data sent anywhere?**
-Never. Everything is stored locally in a JSON file on your 
+Never. Everything is stored locally in a JSON file on your
 own computer.
 
 **Can I use this at work?**
-Yes. Enable Private mode or turn off capture entirely when 
+Yes. Enable Private mode or turn off capture entirely when
 working with sensitive documents.
 
 **My antivirus flagged it — is it safe?**
-Yes. PyInstaller executables are sometimes flagged by 
-antivirus tools. You can verify Smart Clipboard is safe 
+Yes. PyInstaller executables are sometimes flagged by
+antivirus tools. You can verify Smart Clipboard is safe
 by reviewing the full source code in this repository.
-Smart Clipboard is safe to use.
 
 **How do I uninstall?**
-Delete the exe and the folder. To remove from Windows startup, 
+Delete the exe and the folder. To remove from Windows startup,
 open Settings → disable auto-start, then delete the folder.
+
+**What is Smart Paste?**
+Smart Paste is a feature in the quick-paste launcher that lets
+you transform text before pasting. Press Enter on any clip to
+open the Smart Paste bar, then choose your format with arrow keys.
+
+---
+
+## What's New in v1.1.0
+
+- **Smart Paste** — transform clips before pasting directly from the launcher
+- **Scrollable launcher** — the launcher now scrolls with full keyboard navigation
+- **Double-tap Ctrl** — open Smart Clipboard from anywhere, instantly
+- **Merge clips** — combine multiple clips with a chosen separator
+- **Search shortcut** — press `S` to jump to the search bar from the clip list
+- **Ctrl+Arrow multi-select** — extend/shrink selection like Windows Explorer
+- **Auto code tagging** — code clips automatically get the `code` tag
+- **Launcher help guide** — hover `?` in the launcher for a full shortcut reference
+- **Snipping Tool fix** — screenshots now save correctly without interfering with the native popup
 
 ---
 
@@ -166,10 +212,12 @@ open Settings → disable auto-start, then delete the folder.
 - [pystray](https://pystray.readthedocs.io) — system tray icon
 - [Pillow](https://pillow.readthedocs.io) — image support
 - [pywin32](https://github.com/mhammond/pywin32) — Windows API
+- [psutil](https://psutil.readthedocs.io) — process detection
 
 ---
 
 ## Running from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/ezeiq7/Smart-Clipboard.git
@@ -181,12 +229,14 @@ pip install -r requirements.txt
 python main.py
 ```
 
+---
+
 ## Reporting Issues
 
 Found a bug? Have a feature request?
 
-[Open an issue](https://github.com/ezeiq7/smart-clipboard/issues) 
-and describe what happened. Include your Windows version and 
+[Open an issue](https://github.com/ezeiq7/smart-clipboard/issues)
+and describe what happened. Include your Windows version and
 what you were doing when the issue occurred.
 
 ---
@@ -194,7 +244,6 @@ what you were doing when the issue occurred.
 ## License
 
 Copyright © 2026 Smart Clipboard
-
 
 ---
 
