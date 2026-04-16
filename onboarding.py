@@ -82,7 +82,7 @@ class Onboarding:
 
     # ── Shared widgets ────────────────────────────────────────────────────
 
-    def _progress(self, card, current, total=6):
+    def _progress(self, card, current, total=7):
         row = tk.Frame(card, bg=HEADER_BG)
         row.place(relx=0.5, rely=0.0, anchor="n", y=8)
         for i in range(total):
@@ -215,7 +215,7 @@ class Onboarding:
         self.app._toggle_active = _watch_toggle
         self.app._toggle_btn.config(command=_watch_toggle)
 
-        self._skip_btn(card, self._skip_activate)
+        self._skip_btn(card, self._finish)
 
     def _skip_activate(self):
         self.app._toggle_btn.config(command=self.app._toggle_active)
@@ -267,7 +267,7 @@ class Onboarding:
         self._pulse_border(entry_frame)
         demo.bind("<Control-c>", lambda *_: self._schedule(350, self._show_step_4))
 
-        self._skip_btn(card, self._show_step_4)
+        self._skip_btn(card, self._finish)
 
     def _pulse_border(self, frame, phase=0, cycles=10):
         if not (frame and frame.winfo_exists()):
@@ -278,30 +278,116 @@ class Onboarding:
         frame.config(bg=color)
         self._schedule(650, self._pulse_border, frame, phase + 1, cycles)
 
-    # ── Step 4 — Launcher ─────────────────────────────────────────────────
+    # ── Step 4 — Smart Paste demo ─────────────────────────────────────────
 
     def _show_step_4(self):
         self._clear()
-        card = self._make_card(500, 325)
+        card = self._make_card(500, 450)
         self._progress(card, 4)
 
-        self._icon_label(card, "🚀", 0.22)
+        self._icon_label(card, "✨", 0.17)
 
         title = tk.Label(card, text="",
-                         font=("Segoe UI", 13, "bold"),
+                         font=("Segoe UI", 12, "bold"),
                          bg=HEADER_BG, fg=TEXT_DARK)
-        title.place(relx=0.5, rely=0.36, anchor="center")
-        self._typewriter(title, "Now the magic. Press this anywhere:")
+        title.place(relx=0.5, rely=0.28, anchor="center")
+        self._typewriter(title, "Smart Paste — transform before you paste")
 
-        keys_frame = tk.Frame(card, bg=HEADER_BG)
-        keys_frame.place(relx=0.5, rely=0.60, anchor="center")
-        self._build_keys(keys_frame)
+        tk.Label(card,
+                 text="Open the launcher with Ctrl+Shift+V — press Enter on any clip to transform it",
+                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY,
+                 justify="center").place(relx=0.5, rely=0.36, anchor="center")
 
-        tk.Label(card, text="Your clips appear instantly — no app switching.",
-                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY
-                 ).place(relx=0.5, rely=0.82, anchor="center")
+        _ORIGINAL = "hey!! just wanted to follow-up... did you get the files?? let me know ASAP!!!"
+        _RESULTS  = {
+            "Clean":   "Hey!! Just wanted to follow-up... did you get the files? Let me know ASAP!",
+            "Bullets": "• hey!!\n• just wanted to follow-up...\n• did you get the files??\n• let me know ASAP!!!",
+            "UPPER":   _ORIGINAL.upper(),
+            "lower":   _ORIGINAL.lower(),
+        }
 
-        self._skip_btn(card, self._show_step_5, label="Next  →")
+        # Read-only demo text box
+        txt_frame = tk.Frame(card, bg=BORDER)
+        txt_frame.place(relx=0.5, rely=0.46, anchor="center", width=430, height=70)
+        txt = tk.Text(txt_frame, font=("Segoe UI", 9),
+                      bg=WHITE, fg=TEXT_DARK,
+                      relief="flat", bd=0, wrap="word",
+                      padx=8, pady=6, highlightthickness=0,
+                      state="normal", cursor="arrow")
+        txt.pack(fill="both", expand=True, padx=1, pady=1)
+        txt.insert("1.0", _ORIGINAL)
+        txt.config(state="disabled")
+
+        # Hint label explaining where Smart Paste lives in the real app
+        tk.Label(card,
+                 text="✨ In Smart Clipboard, this happens directly from the launcher with Ctrl+Shift+V",
+                 font=("Segoe UI", 8), bg=HEADER_BG, fg=TEXT_GRAY,
+                 justify="center",
+                 ).place(relx=0.5, rely=0.60, anchor="center")
+
+        # "✨ That's Smart Paste!" fade-in label — placed but invisible until click
+        praise_lbl = tk.Label(card, text="✨  That's Smart Paste!",
+                              font=("Segoe UI", 8, "bold"),
+                              bg=HEADER_BG, fg=HEADER_BG)  # start invisible (same as bg)
+        praise_lbl.place(relx=0.5, rely=0.82, anchor="center")
+
+        def _set_text(content):
+            txt.config(state="normal")
+            txt.delete("1.0", "end")
+            txt.insert("1.0", content)
+            txt.config(state="disabled")
+
+        def _on_format(fmt, box, lbl_widget):
+            _set_text(_RESULTS[fmt])
+            # Reset all buttons to default style (Frame bg/border + Label fg/bg)
+            for b, l in _btns:
+                b.config(bg=WHITE, highlightbackground=BORDER)
+                l.config(bg=WHITE, fg=TEXT_DARK)
+            # Highlight the clicked button
+            box.config(bg=ACCENT, highlightbackground=ACCENT)
+            lbl_widget.config(bg=ACCENT, fg="white")
+            # Fade in the praise label
+            _fade_in_praise(0)
+
+        def _fade_in_praise(step):
+            if not (praise_lbl and praise_lbl.winfo_exists()):
+                return
+            # Interpolate from HEADER_BG to ACCENT over 12 steps
+            t = min(step / 11, 1.0)
+            color = _hex_lerp(HEADER_BG, ACCENT, t)
+            praise_lbl.config(fg=color)
+            if step < 12:
+                self._schedule(30, _fade_in_praise, step + 1)
+
+        # Format buttons row
+        btns_frame = tk.Frame(card, bg=HEADER_BG)
+        btns_frame.place(relx=0.5, rely=0.72, anchor="center")
+
+        _btns = []  # stores (box_frame, label_widget) for reset on each click
+        for fmt in ("Clean", "Bullets", "UPPER", "lower"):
+            box = tk.Frame(btns_frame, bg=WHITE,
+                           highlightbackground=BORDER,
+                           highlightthickness=1)
+            box.pack(side="left", padx=6)
+            lbl = tk.Label(box, text=fmt, bg=WHITE,
+                           fg=TEXT_DARK, font=("Segoe UI", 10, "bold"),
+                           padx=14, pady=7, cursor="hand2")
+            lbl.pack()
+            _btns.append((box, lbl))
+            lbl.bind("<Enter>", lambda e, b=box, l=lbl: (
+                b.config(highlightbackground=ACCENT),
+                l.config(fg=ACCENT),
+            ) if b.cget("bg") != ACCENT else None)
+            lbl.bind("<Leave>", lambda e, b=box, l=lbl: (
+                b.config(highlightbackground=BORDER),
+                l.config(fg=TEXT_DARK),
+            ) if b.cget("bg") != ACCENT else None)
+            lbl.bind("<Button-1>", lambda e, f=fmt, b=box, l=lbl: _on_format(f, b, l))
+            box.bind("<Button-1>",  lambda e, f=fmt, b=box, l=lbl: _on_format(f, b, l))
+
+        next_btn = self._accent_btn(card, "Next  →", self._show_step_5_peek)
+        next_btn.place(relx=0.5, rely=0.91, anchor="center")
+        self._skip_btn(card, self._finish)
 
     def _build_keys(self, frame):
         key_boxes = []
@@ -334,12 +420,82 @@ class Onboarding:
 
         self._schedule(350, pop, 0)
 
-    # ── Step 5 — Private mode ─────────────────────────────────────────────
+    # ── Step 5 — Clipboard Peek ───────────────────────────────────────────
+
+    def _show_step_5_peek(self):
+        self._clear()
+        card = self._make_card(500, 400)
+        self._progress(card, 5)
+
+        self._icon_label(card, "👁", 0.19)
+
+        title = tk.Label(card, text="",
+                         font=("Segoe UI", 13, "bold"),
+                         bg=HEADER_BG, fg=TEXT_DARK)
+        title.place(relx=0.5, rely=0.31, anchor="center")
+        self._typewriter(title, "Clipboard Peek — see without switching")
+
+        tk.Label(card,
+                 text="Hold Ctrl+Shift from anywhere to instantly preview your clipboard — without losing focus",
+                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY,
+                 justify="center").place(relx=0.5, rely=0.41, anchor="center")
+
+        # Key boxes: Ctrl + Shift (hold)
+        keys_frame = tk.Frame(card, bg=HEADER_BG)
+        keys_frame.place(relx=0.5, rely=0.57, anchor="center")
+        key_boxes = []
+        for item in ["Ctrl", "+", "Shift", "(hold)"]:
+            if item == "+":
+                tk.Label(keys_frame, text="+", bg=HEADER_BG,
+                         fg=TEXT_GRAY, font=("Segoe UI", 13)).pack(side="left", padx=5)
+            elif item == "(hold)":
+                tk.Label(keys_frame, text="hold", bg=HEADER_BG,
+                         fg=TEXT_GRAY, font=("Segoe UI", 9, "italic")).pack(side="left", padx=(6, 0))
+            else:
+                box = tk.Frame(keys_frame, bg=WHITE,
+                               highlightbackground=BORDER,
+                               highlightthickness=1)
+                box.pack(side="left", padx=5)
+                lbl = tk.Label(box, text=item, bg=WHITE,
+                               fg=TEXT_DARK, font=("Segoe UI", 10, "bold"),
+                               padx=11, pady=7)
+                lbl.pack()
+                key_boxes.append((box, lbl))
+
+        def pop(i):
+            if i >= len(key_boxes):
+                return
+            box, lbl = key_boxes[i]
+            box.config(highlightbackground=ACCENT)
+            lbl.config(fg=ACCENT)
+            self._schedule(180, lambda b=box, l=lbl: (
+                b.config(highlightbackground=ACCENT) if b.winfo_exists() else None,
+                l.config(fg=TEXT_DARK)              if l.winfo_exists() else None,
+            ))
+            self._schedule(i * 160 + 480, pop, i + 1)
+
+        self._schedule(350, pop, 0)
+
+        # Feature highlights
+        highlights = tk.Frame(card, bg=HEADER_BG)
+        highlights.place(relx=0.5, rely=0.76, anchor="center")
+        tk.Label(highlights, text="🔒  Click overlay to lock it in place",
+                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY
+                 ).pack(anchor="w", pady=2)
+        tk.Label(highlights, text="← →  Navigate through clip history",
+                 font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY
+                 ).pack(anchor="w", pady=2)
+
+        next_btn = self._accent_btn(card, "Next  →", self._show_step_5)
+        next_btn.place(relx=0.5, rely=0.91, anchor="center")
+        self._skip_btn(card, self._finish)
+
+    # ── Step 6 — Private mode ─────────────────────────────────────────────
 
     def _show_step_5(self):
         self._clear()
         card = self._make_card(480, 340)
-        self._progress(card, 5)
+        self._progress(card, 6)
 
         self._icon_label(card, "🔒", 0.22)
 
@@ -357,18 +513,18 @@ class Onboarding:
                  bg="#6C3483", fg="white",
                  padx=20, pady=8).pack()
 
-        tk.Label(card, text="Purple button — clips stay in memory only,\nnever written to disk.",
+        tk.Label(card, text="Purple button — clips are never saved to disk. Clears when turned off,\nnever written to disk.",
                  font=("Segoe UI", 9), bg=HEADER_BG, fg=TEXT_GRAY,
                  justify="center").place(relx=0.5, rely=0.78, anchor="center")
 
         self._skip_btn(card, self._show_step_6, label="Next  →")
 
-    # ── Step 6 — Done ─────────────────────────────────────────────────────
+    # ── Step 7 — Done ─────────────────────────────────────────────────────
 
     def _show_step_6(self):
         self._clear()
-        card = self._make_card(500, 340)
-        self._progress(card, 6)
+        card = self._make_card(500, 400)
+        self._progress(card, 7)
 
         title = tk.Label(card, text="",
                          font=("Segoe UI", 16, "bold"),
@@ -377,26 +533,28 @@ class Onboarding:
         self._typewriter(title, "You're all set! 🎉", speed=40)
 
         shortcuts = [
-            ("Ctrl + C",         "saves clips automatically"),
-            ("Ctrl + Alt + C",   "copies and pins instantly"),
-            ("Ctrl + Shift + V", "opens quick launcher"),
-            ("Double Ctrl",      "opens Smart Clipboard"),
+            ("Ctrl + C",             "Saves clips automatically"),
+            ("Ctrl + Alt + C",       "Copies and pins instantly"),
+            ("Ctrl + Shift + V",     "Opens quick launcher"),
+            ("Double Ctrl",          "Opens Smart Clipboard"),
+            ("Ctrl + Shift (hold)",  "Clipboard Peek"),
+            ("Ctrl + Shift + 1–9",   "Paste hotkey clip instantly"),
         ]
 
         ref = tk.Frame(card, bg=WHITE,
                        highlightbackground=BORDER, highlightthickness=1)
-        ref.place(relx=0.5, rely=0.52, anchor="center", width=385, height=138)
+        ref.place(relx=0.5, rely=0.54, anchor="center", width=410, height=192)
 
         for key, desc in shortcuts:
             row = tk.Frame(ref, bg=WHITE)
-            row.pack(fill="x", padx=14, pady=6)
+            row.pack(fill="x", padx=14, pady=4)
             tk.Label(row, text=key, font=("Segoe UI", 9, "bold"),
-                     bg=WHITE, fg=ACCENT, width=16, anchor="w").pack(side="left")
+                     bg=WHITE, fg=ACCENT, width=20, anchor="w").pack(side="left")
             tk.Label(row, text=desc, font=("Segoe UI", 9),
                      bg=WHITE, fg=TEXT_DARK, anchor="w").pack(side="left")
 
         b = self._accent_btn(card, "Start using it  →", self._finish)
-        b.place(relx=0.5, rely=0.88, anchor="center")
+        b.place(relx=0.5, rely=0.91, anchor="center")
 
         self._schedule(500, self._confetti)
 

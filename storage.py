@@ -18,7 +18,7 @@ SETTINGS_FILE = os.path.join(_data_dir(), "settings.json")
 
 def load_settings():
     if not os.path.exists(SETTINGS_FILE):
-        return {"max_clips": 200, "max_hours": None, "excluded_apps": [], "auto_start": True, "global_shortcuts": True}
+        return {"max_clips": 200, "max_hours": None, "excluded_apps": [], "auto_start": True, "global_shortcuts": True, "session_gap_minutes": 30}
     try:
         s = json.load(open(SETTINGS_FILE))
     except (json.JSONDecodeError, ValueError):
@@ -31,6 +31,14 @@ def load_settings():
     s.setdefault("excluded_apps", [])
     s.setdefault("auto_start", True)
     s.setdefault("global_shortcuts", True)
+    s.setdefault("session_gap_minutes", 30)
+    s.setdefault("shortcut_launcher",     True)
+    s.setdefault("shortcut_toggle",       True)
+    s.setdefault("shortcut_incognito",    True)
+    s.setdefault("shortcut_pin",          True)
+    s.setdefault("shortcut_show",         True)
+    s.setdefault("shortcut_peek",         True)
+    s.setdefault("shortcut_hotkey_clips", True)
     return s
 
 def save_settings(settings):
@@ -65,11 +73,12 @@ def load_clips():
     for item in data:
         if isinstance(item, str):
             converted.append({"text": item, "date": "Unknown", "pinned": False,
-                               "tag": None, "template": False})
+                               "tag": None, "template": False, "hotkey_slot": None})
         else:
-            item.setdefault("pinned",   False)
-            item.setdefault("tag",      None)
-            item.setdefault("template", False)
+            item.setdefault("pinned",      False)
+            item.setdefault("tag",         None)
+            item.setdefault("template",    False)
+            item.setdefault("hotkey_slot", None)
             converted.append(item)
     return converted
 
@@ -184,3 +193,26 @@ def filter_by_tag(tag):
 def search_clips(query):
     clips = load_clips()
     return [c for c in clips if query.lower() in c["text"].lower()]
+
+def set_hotkey_slot(text, slot):
+    """Assign hotkey slot (1–9) to a clip. Pass slot=None to unassign.
+    Clears any other clip that currently holds the same slot."""
+    clips = load_clips()
+    if slot is not None:
+        for c in clips:
+            if c.get("hotkey_slot") == slot:
+                c["hotkey_slot"] = None
+    for c in clips:
+        if c["text"] == text:
+            c["hotkey_slot"] = slot
+            break
+    with open(DATA_FILE, "w") as f:
+        json.dump(clips, f, indent=2)
+    return clips
+
+def get_clip_by_hotkey(slot):
+    """Return the clip assigned to the given hotkey slot (1–9), or None."""
+    for c in load_clips():
+        if c.get("hotkey_slot") == slot:
+            return c
+    return None
