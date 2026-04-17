@@ -10,7 +10,9 @@ Never lose anything you copy.
 Stop re-copying the same things over and over.
 
 👀 **Clipboard Peek** — instantly see what you copied without leaving your app
+
 🕐 **Time Machine** — find anything by remembering when you copied it
+
 ✨ **Smart Paste** — instantly clean, fix, and format text before pasting
 
 Private by default. Nothing leaves your device. Ever.
