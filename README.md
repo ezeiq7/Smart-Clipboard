@@ -4,10 +4,16 @@
 
 # Smart Clipboard ✨
 
-**Your clipboard has a memory now.**
+**A clipboard that remembers everything, peeks without leaving your app, and pastes smarter in seconds.**
 
-Everything you copy is saved, searchable, and one shortcut away.
-No accounts. No internet. Everything stays on your device.
+Never lose anything you copy.
+Stop re-copying the same things over and over.
+
+👀 **Clipboard Peek** — instantly see what you copied without leaving your app
+🕐 **Time Machine** — find anything by remembering when you copied it
+✨ **Smart Paste** — instantly clean, fix, and format text before pasting
+
+Private by default. Nothing leaves your device. Ever.
 
 [![Download](https://img.shields.io/badge/Download-v1.2.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
@@ -25,12 +31,23 @@ No accounts. No internet. Everything stays on your device.
 
 ## What is Smart Clipboard?
 
-Smart Clipboard is a free Windows clipboard manager that silently
-saves everything you copy and lets you access it instantly —
-without ever switching apps.
+Smart Clipboard is a free Windows clipboard manager that automatically saves everything you copy and lets you instantly find, preview, and paste it—without ever switching apps.
 
-Built because every existing clipboard manager was either too
-complex, too ugly, or charged too much.
+Built because most clipboard managers are either too complex, too ugly, or overpriced.
+
+---
+
+## Why Smart Clipboard is different
+
+👀 **Clipboard Peek** — hold Ctrl+Shift from anywhere and a floating overlay shows your clipboard without stealing focus. Keep typing while referencing what you copied.
+
+🕐 **Time Machine** — your clips are grouped into work sessions automatically. Find that link you copied this morning without remembering the exact words.
+
+✨ **Smart Paste** — paste messy text as clean formatting, bullet points, UPPERCASE or a single line. One keystroke, perfect output every time.
+
+Works instantly. No setup. Install and go.
+
+No other free clipboard manager does this. No accounts. No tracking. No cloud. Ever.
 
 ---
 
@@ -52,7 +69,7 @@ complex, too ugly, or charged too much.
 - ⊕ **Merge clips** — select multiple clips and merge them with a custom separator (newline, comma, space, or custom) into one paste.
 - ⌨️ **Double-tap Ctrl** — open Smart Clipboard instantly from anywhere without memorising shortcuts.
 - 🎨 **Syntax highlighting** — code clips display with colour highlighting in the preview panel.
-- 🔍 **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Click to lock the overlay in place, nnavigate through history with ← → buttons, click text to copy. No other free clipboard manager does this.
+- 🔍 **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Click to lock the overlay in place, navigate through history with ← → buttons, click text to copy. No other free clipboard manager does this.
 - 🕐 **Clipboard Time Machine** — clips are automatically grouped into work sessions by time. Find anything by remembering what you were doing, not what you copied.
 - ✂️ **Clipboard Split** — copy a comma-separated list and Smart Clipboard detects it automatically. Press `X` to split into separate clips, bullet list, numbered list or one line instantly.
 - 🎯 **Hotkey Clips** — assign any clip to `Ctrl+Shift+1` through `Ctrl+Shift+9` for instant paste from anywhere.
@@ -229,7 +246,7 @@ open the Smart Paste bar, then choose your format with arrow keys.
 Hold Ctrl+Shift from anywhere to instantly preview your last copied item without losing focus on your current app. Click the overlay to lock it in place and navigate through clip history with the arrow buttons.
 
 **What is Clipboard Time Machine?**
-Your clips are automatically grouped into work sessions based on time gaps. Instead of scrolling through a flat list you can find clips by remembering what you were working on when you copied them.
+Your clips are automatically grouped into work sessions based on time gaps. Instead of scrolling through a flat list, you can find clips by remembering what you were working on when you copied them.
 
 ---
 
