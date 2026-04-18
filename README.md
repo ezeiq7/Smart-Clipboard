@@ -174,7 +174,7 @@ Following up on our meeting on {date}.
 Please find {document} attached.
 
 Best regards,
-Uzair
+Paul
 ```
 
 Press copy on this clip → a dialog opens asking for **name**, **date** and **document** → fill them in → perfect personalised message copied instantly. No switching apps. No retyping. No mistakes.
@@ -254,7 +254,7 @@ Your clips are automatically grouped into work sessions based on time gaps. Inst
 
 ## What's New in v1.2.0
 
-- **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Click to lock the overlay, navigate through clip history with the arrow buttons. No other free clipboard manager does this.
+- **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Click to lock the overlay, navigate through clip history with the arrow buttons.
 - **Clipboard Time Machine** — clips are automatically grouped into work sessions by time. Find anything by remembering what you were doing, not what you copied.
 - **Clipboard Split** — copy a comma-separated list and Smart Clipboard detects it automatically. Press `X` to split into separate clips, bullet list, numbered list or one line instantly.
 - **Hotkey Clips** — assign any clip to `Ctrl+Shift+1` through `Ctrl+Shift+9` for instant paste from anywhere, no launcher needed.
