@@ -263,6 +263,12 @@ Your clips are automatically grouped into work sessions based on time gaps. Inst
 
 ---
 
+## 📖 Read More
+
+- [I built a clipboard manager that doesn't interrupt your flow — here's why and how](https://dev.to/ezeiq7/i-built-a-clipboard-manager-that-doesnt-interrupt-your-flow-heres-why-and-how-30jb)
+
+---
+
 ## Built With
 
 - [Python](https://python.org) — core language
