@@ -17,12 +17,12 @@ Stop re-copying the same things over and over.
 
 Private by default. Nothing leaves your device. Ever.
 
-[![Download](https://img.shields.io/badge/Download-v1.2.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
+[![Download](https://img.shields.io/badge/Download-v1.3.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![License](https://img.shields.io/badge/License-Source%20Available-orange?style=for-the-badge)](LICENSE)
 
 ### Full Walkthrough — Time Machine, Clipboard Peek & Split
-![Smart Clipboard v1.2.0 walkthrough — double-tap Ctrl to open, Clipboard Time Machine session grouping, Clipboard Peek with overlay navigation and lock, Clipboard Split converting a comma list to bullet points](demo1.gif)
+![Smart Clipboard v1.3.0 walkthrough — double-tap Ctrl to open, Clipboard Time Machine session grouping, Clipboard Peek with overlay navigation and lock, Clipboard Split converting a comma list to bullet points](demo1.gif)
 
 ### Smart Paste
 ![Smart Paste](demo2.gif)
@@ -61,17 +61,17 @@ No other free clipboard manager does this. No accounts. No tracking. No cloud. E
 - 📌 **Pin clips** — keep important clips at the top forever
 - 🏷️ **Tags** — colour-coded organisation for your clips
 - 🖼️ **Image support** — screenshots and images saved with preview
-- 🔎 **Auto code detection** — code clips are automatically tagged and formatting is preserved
+- 🔎 **Auto code detection** — code clips are automatically detected and formatting is preserved
 
 ### Power Features
-- ⚡ **Quick-paste launcher** — press `Ctrl+Shift+V` anywhere for an instant floating search palette with fuzzy search. No app switching needed.
+- ⚡ **Quick-paste launcher** — press `Ctrl+Shift+V` anywhere for an instant floating search palette. No app switching needed.
 - ✨ **Smart Paste** — when pasting from the launcher, choose how to paste: Plain, Clean (fix quotes & spacing), No Breaks, Bullet List, UPPERCASE, or lowercase. One keystroke, perfect output.
 - ⟨⟩ **Templates** — save clips with `{placeholders}` that fill in on demand. Perfect for repetitive emails and messages.
 - 🔒 **Private mode** — clips stay in memory only, never written to disk. Clears automatically when you're done.
 - ⊕ **Merge clips** — select multiple clips and merge them with a custom separator (newline, comma, space, or custom) into one paste.
 - ⌨️ **Double-tap Ctrl** — open Smart Clipboard instantly from anywhere without memorising shortcuts.
 - 🎨 **Syntax highlighting** — code clips display with colour highlighting in the preview panel.
-- 🔍 **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Click to lock the overlay in place, navigate through history with ← → buttons, click text to copy. No other free clipboard manager does this.
+- 🔍 **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Lock it to zoom into images, pan around screenshots and navigate clip history. No other free clipboard manager does this.
 - 🕐 **Clipboard Time Machine** — clips are automatically grouped into work sessions by time. Find anything by remembering what you were doing, not what you copied.
 - ✂️ **Clipboard Split** — copy a comma-separated list and Smart Clipboard detects it automatically. Press `X` to split into separate clips, bullet list, numbered list or one line instantly.
 - 🎯 **Hotkey Clips** — assign any clip to `Ctrl+Shift+1` through `Ctrl+Shift+9` for instant paste from anywhere.
@@ -148,6 +148,7 @@ No other free clipboard manager does this. No accounts. No tracking. No cloud. E
 | Click | Paste plain instantly |
 | `Esc` | Dismiss launcher |
 | `#tag` | Filter clips by tag |
+| `template` `hotkey` | Filter clips by property |
 | any text | Fuzzy search clips |
 
 ### Smart Paste Formats
@@ -204,14 +205,10 @@ Smart Clipboard is built with privacy as a core feature — not an afterthought.
 
 Open settings via the ⚙ gear icon in the toolbar (or press B):
 
-- **Max clips to keep** — 10 to 500, or unlimited
-- **Auto-delete after** — 1 hour to 30 days, or never
-- **Excluded apps** — comma-separated app names to ignore
-- **Launch at startup** — toggle Windows auto-start
-- **Global shortcuts** — disable all hotkeys if they conflict
+- **Main settings** — max clips, auto-delete, excluded apps
+- **Advanced settings** — startup, global shortcuts, Time Machine gap, export clips, sensitive content storage
 - **Personalize Shortcuts** — enable or disable individual shortcuts independently
-- **Clipboard Time Machine gap** — set session grouping to 15, 30 or 60 minutes inactive
-- **Export clips** — save your history as `.json` or `.txt`
+- **Give Feedback** — opens GitHub issues directly from the app
 - **Replay tutorial** — re-run the onboarding at any time
 
 ---
@@ -252,16 +249,17 @@ Your clips are automatically grouped into work sessions based on time gaps. Inst
 
 ---
 
-## What's New in v1.2.0
+## What's New in v1.3.0
 
-- **Clipboard Peek** — hold `Ctrl+Shift` from anywhere to instantly preview your clipboard without losing focus. Click to lock the overlay, navigate through clip history with the arrow buttons.
-- **Clipboard Time Machine** — clips are automatically grouped into work sessions by time. Find anything by remembering what you were doing, not what you copied.
-- **Clipboard Split** — copy a comma-separated list and Smart Clipboard detects it automatically. Press `X` to split into separate clips, bullet list, numbered list or one line instantly.
-- **Hotkey Clips** — assign any clip to `Ctrl+Shift+1` through `Ctrl+Shift+9` for instant paste from anywhere, no launcher needed.
-- **Personalize Shortcuts** — enable or disable individual global shortcuts independently from the settings panel.
-- **Reliability fix** — switched to event-driven clipboard listener, no more missed copies.
-- **Revamped onboarding** — new interactive Smart Paste and Clipboard Peek tutorial steps
-- **Smarter image labels** — screenshots now show timestamp instead of plain "Image"
+- **Smarter search** — type "template", "hotkey", "pinned" or any tag name to instantly filter clips
+- **Image zoom in Peek** — scroll to zoom, drag to pan inside locked Clipboard Peek overlay
+- **Source app detection** — preview panel shows which app each clip was copied from
+- **Smart Paste auto-suggestion** — automatically highlights the most relevant format based on clip content
+- **Advanced settings** — cleaner settings panel with power user options tucked away
+- **Template shortcut** — press Enter or C on a template clip to instantly open the fill dialog
+- **Sensitive content opt-in** — advanced option to store sensitive content if needed
+- **Silent startup** — app now starts completely invisibly with no flash on boot
+- **Bug fixes** — launcher scrolling overhaul, search accuracy, app window staying hidden, private mode duplication, code detection false positives and much more
 
 ---
 

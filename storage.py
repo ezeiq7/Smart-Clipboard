@@ -39,6 +39,7 @@ def load_settings():
     s.setdefault("shortcut_show",         True)
     s.setdefault("shortcut_peek",         True)
     s.setdefault("shortcut_hotkey_clips", True)
+    s.setdefault("store_sensitive",       False)
     return s
 
 def save_settings(settings):
@@ -121,7 +122,39 @@ def save_image(img):
     img.save(path)
     return path
 
-def save_clip(text_or_path, clip_type="text"):
+APP_NAMES = {
+    "chrome.exe":    "Google Chrome",
+    "firefox.exe":   "Firefox",
+    "msedge.exe":    "Microsoft Edge",
+    "winword.exe":   "Microsoft Word",
+    "excel.exe":     "Microsoft Excel",
+    "powerpnt.exe":  "PowerPoint",
+    "code.exe":      "VS Code",
+    "notepad.exe":   "Notepad",
+    "outlook.exe":   "Outlook",
+    "slack.exe":     "Slack",
+    "discord.exe":   "Discord",
+    "teams.exe":     "Microsoft Teams",
+    "acrobat.exe":              "Adobe Acrobat",
+    "applicationframehost.exe": "Windows App",
+}
+
+def _get_source_app():
+    try:
+        import ctypes, ctypes.wintypes, psutil
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        pid = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        exe = psutil.Process(pid.value).name().lower()
+        if exe in APP_NAMES:
+            return APP_NAMES[exe]
+        return exe.replace(".exe", "").capitalize()
+    except Exception:
+        return None
+
+def save_clip(text_or_path, clip_type="text", source=None):
     clips = load_clips()
     if clip_type == "text" and any(c.get("text") == text_or_path for c in clips):
         return clips
@@ -132,6 +165,7 @@ def save_clip(text_or_path, clip_type="text"):
         "pinned":   False,
         "tag":      None,
         "template": False,
+        "source":   source if source is not None else _get_source_app(),
     })
     clips = _apply_limits(clips)
     with open(DATA_FILE, "w") as f:
@@ -190,9 +224,37 @@ def filter_by_tag(tag):
         return clips
     return [c for c in clips if c.get("tag") == tag]
 
+def _image_search_label(clip):
+    """Generate a searchable string for image clips: 'Screenshot 19 Apr 14:46'."""
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(clip.get("date", ""), "%d %b %Y, %H:%M")
+        return f"Screenshot {dt.strftime('%d %b %H:%M')}"
+    except Exception:
+        return "Screenshot"
+
 def search_clips(query):
     clips = load_clips()
-    return [c for c in clips if query.lower() in c["text"].lower()]
+    q = query.lower()
+    words = [w for w in q.split() if w]
+    wants_template = any("template".startswith(w) for w in words if len(w) >= 3)
+    wants_hotkey   = any("hotkey".startswith(w)   for w in words if len(w) >= 3)
+    def _matches(c):
+        if wants_template and c.get("template"):
+            return True
+        if wants_hotkey and c.get("hotkey_slot") is not None:
+            return True
+        tag = c.get("tag") or ""
+        if tag and q in tag.lower():
+            return True
+        if c.get("type") == "image":
+            target = _image_search_label(c).lower()
+            return q in target or (bool(words) and all(w in target for w in words))
+        t = c["text"].lower()
+        if q in t:
+            return True
+        return bool(words) and all(w in t for w in words)
+    return [c for c in clips if _matches(c)]
 
 def set_hotkey_slot(text, slot):
     """Assign hotkey slot (1–9) to a clip. Pass slot=None to unassign.

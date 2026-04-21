@@ -18,6 +18,11 @@ def set_peek_locked(val: bool):
     global _peek_locked
     _peek_locked = val
 
+def reset_ctrl_timer():
+    """Invalidate the double-Ctrl timer so a synthetic Ctrl press cannot trigger show_callback."""
+    global _last_ctrl_time
+    _last_ctrl_time = 0.0
+
 # ── Unified RegisterHotKey thread ────────────────────────────────────────
 
 def _unified_hotkey_thread(registrations, dispatch):
@@ -98,7 +103,13 @@ def _on_press(key, pin_callback=None, show_callback=None,
         # Only count a fresh tap — ignore key-repeat events while holding
         if is_ctrl and was_fresh:
             now = time.time()
-            if now - _last_ctrl_time < 0.3:
+            # Check if Shift or Alt is already held — if so this is a hotkey combo
+            # (Ctrl+Shift+1, Ctrl+Shift+V etc.), never a double-Ctrl open
+            shift_held = any(k in _pressed for k in (
+                keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r))
+            alt_held   = any(k in _pressed for k in (
+                keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r))
+            if not shift_held and not alt_held and now - _last_ctrl_time < 0.3:
                 if show_callback:
                     show_callback()
                 _last_ctrl_time = 0.0
@@ -211,6 +222,15 @@ def _clipboard_listener(callback):
     def _do_read():
         global _last_clip
         try:
+            # Text takes priority — apps like OneNote put both text and image
+            # on the clipboard simultaneously; we want the text.
+            current = pyperclip.paste()
+            if current and current != _last_clip:
+                _last_clip = current
+                if callback:
+                    callback(current)
+                return
+            # No text (or same as last) — check for a pure image (e.g. Snipping Tool)
             from PIL import ImageGrab
             img = ImageGrab.grabclipboard()
             if img is not None:
@@ -219,12 +239,6 @@ def _clipboard_listener(callback):
                     _last_clip = img_id
                     if callback:
                         callback(img)
-            else:
-                current = pyperclip.paste()
-                if current and current != _last_clip:
-                    _last_clip = current
-                    if callback:
-                        callback(current)
         except Exception:
             pass
 

@@ -38,13 +38,36 @@ def _transform(text: str, mode: str) -> str:
     return text
 
 
+def _suggest_format(text: str) -> int:
+    """Return the SMART_PASTE_OPTIONS index that best fits the clip content."""
+    import re
+    # 3+ delimited items → Bullets (index 3)
+    for delim in (",", ";"):
+        if delim in text:
+            parts = [p.strip() for p in text.split(delim) if p.strip()]
+            if len(parts) >= 3:
+                return 3
+    # All-uppercase text → lower (index 5)
+    letters = [c for c in text if c.isalpha()]
+    if letters and all(c.isupper() for c in letters):
+        return 5
+    # Smart quotes, em/en dashes, or multiple spaces → Clean (index 1)
+    if re.search(r'[\u2018\u2019\u201c\u201d\u2013\u2014]|  ', text):
+        return 1
+    # 3 or more line breaks → No Breaks (index 2)
+    if text.count("\n") >= 3:
+        return 2
+    return 0
+
+
 class QuickPasteLauncher:
     WIN_W    = 500
     WIN_H    = 360
-    MAX_CLIPS = 15
+    MAX_CLIPS = 200
 
-    def __init__(self, tk_root):
+    def __init__(self, tk_root, suppress_fn=None):
         self._root            = tk_root
+        self._suppress_fn     = suppress_fn
         self._win             = None
         self._prev_hwnd       = None
         self._clips           = []
@@ -56,6 +79,9 @@ class QuickPasteLauncher:
         self._smart_mode      = False
         self._help_card       = None
         self._help_after      = None
+        self._render_after    = None
+        self._last_nav_time   = 0.0
+        self._row_widgets     = []   # list of (row, pin_lbl, type_lbl, text_lbl, tag_lbl|None, clip)
 
     # ── Public entry point ─────────────────────────────────────────────────
 
@@ -130,11 +156,43 @@ class QuickPasteLauncher:
         list_container.pack(fill="both", expand=True, padx=4, pady=4)
 
         self._canvas = tk.Canvas(list_container, bg=BG, highlightthickness=0, bd=0)
-        self._scrollbar = tk.Scrollbar(list_container, orient="vertical",
-                                       command=self._canvas.yview)
-        self._canvas.configure(yscrollcommand=self._scrollbar.set)
-        self._scrollbar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
+
+        # ── Custom scrollbar (avoids native Scrollbar drag bugs) ─────────────
+        sb_track = tk.Frame(list_container, bg="#2A2A3F", width=8)
+        sb_track.pack(side="right", fill="y")
+        sb_track.pack_propagate(False)
+        self._sb_track = sb_track
+        self._sb_thumb = tk.Frame(sb_track, bg=ACCENT, cursor="hand2")
+
+        def _update_sb(first, last):
+            first, last = float(first), float(last)
+            if last - first >= 1.0:
+                self._sb_thumb.place_forget()
+                return
+            h = sb_track.winfo_height()
+            self._sb_thumb.place(x=0, y=int(first * h),
+                                 width=8, height=max(20, int((last - first) * h)))
+
+        self._canvas.configure(yscrollcommand=_update_sb)
+
+        def _sb_press(e):
+            pass  # anchor recorded implicitly via y_root in motion
+
+        def _sb_motion(e):
+            h = self._sb_track.winfo_height()
+            if h <= 0:
+                return
+            ratio = (e.y_root - self._sb_track.winfo_rooty()) / h
+            self._canvas.yview_moveto(max(0.0, min(1.0, ratio)))
+
+        def _sb_release(e):
+            pass  # no momentum to cancel
+
+        for w in (sb_track, self._sb_thumb):
+            w.bind("<Button-1>",       _sb_press)
+            w.bind("<B1-Motion>",      _sb_motion)
+            w.bind("<ButtonRelease-1>", _sb_release)
 
         self._list_frame = tk.Frame(self._canvas, bg=BG)
         self._canvas_window = self._canvas.create_window((0, 0), window=self._list_frame, anchor="nw")
@@ -146,6 +204,8 @@ class QuickPasteLauncher:
         self._canvas.bind("<Configure>", lambda e:
             self._canvas.itemconfig(self._canvas_window, width=e.width))
         self._canvas.bind("<MouseWheel>", lambda e:
+            self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        win.bind("<MouseWheel>", lambda e:
             self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         # ── Smart paste bar (hidden until Enter pressed) ──────────────────
@@ -217,7 +277,13 @@ class QuickPasteLauncher:
         self._load_clips(self._search_var.get() if self._search_var else "")
 
     def _load_clips(self, query: str):
-        all_clips  = storage.load_clips()
+        from datetime import datetime
+        def _date_key(c):
+            try:
+                return datetime.strptime(c.get("date", ""), "%d %b %Y, %H:%M")
+            except Exception:
+                return datetime.min
+        all_clips  = sorted(storage.load_clips(), key=_date_key, reverse=True)
         pinned     = [c for c in all_clips if c.get("pinned")]
         unpinned   = [c for c in all_clips if not c.get("pinned")]
         candidates = pinned + unpinned
@@ -229,8 +295,18 @@ class QuickPasteLauncher:
                 if (c.get("tag") or "").lower().startswith(tag_query)
             ][: self.MAX_CLIPS]
         elif query.strip():
-            scored = [(self._score(query, c["text"]), c) for c in candidates]
-            scored = [(s, c) for s, c in scored if s > 0]
+            q_words        = query.strip().lower().split()
+            wants_template = any("template".startswith(w) for w in q_words if len(w) >= 3)
+            wants_hotkey   = any("hotkey".startswith(w)   for w in q_words if len(w) >= 3)
+            scored = []
+            for c in candidates:
+                s = self._score(query, c["text"])
+                if s == 0 and wants_template and c.get("template"):
+                    s = 50
+                if s == 0 and wants_hotkey and c.get("hotkey_slot") is not None:
+                    s = 50
+                if s > 0:
+                    scored.append((s, c))
             scored.sort(key=lambda x: -x[0])
             self._clips = [c for _, c in scored][: self.MAX_CLIPS]
         else:
@@ -240,20 +316,24 @@ class QuickPasteLauncher:
         self._render_list()
 
     def _score(self, query: str, text: str) -> int:
-        q = query.lower(); t = text.lower()
+        q = query.lower()
+        t = text.lower()
+        # Exact substring — highest priority
         if q in t:
-            return 100 + max(0, 50 - t.index(q))
-        qi = sc = 0
-        for ch in t:
-            if qi < len(q) and ch == q[qi]:
-                qi += 1; sc += 1
-        return sc if qi == len(q) else 0
+            return 200 + max(0, 50 - t.index(q))
+        # All individual words appear somewhere in the text
+        words = [w for w in q.split() if w]
+        if words and all(w in t for w in words):
+            return 100
+        return 0
 
     # ── List rendering ────────────────────────────────────────────────────
 
     def _render_list(self):
         for w in self._list_frame.winfo_children():
             w.destroy()
+        self._row_widgets = []
+        self._canvas.yview_moveto(0)
 
         if not self._clips:
             tk.Label(self._list_frame,
@@ -264,6 +344,36 @@ class QuickPasteLauncher:
 
         for i, clip in enumerate(self._clips):
             self._make_row(i, clip)
+
+    def _update_highlight(self, old_idx: int, new_idx: int):
+        """Recolor only the two changed rows — no widget rebuild needed."""
+        for idx in (old_idx, new_idx):
+            if idx < 0 or idx >= len(self._row_widgets):
+                continue
+            row, pin_lbl, type_lbl, text_lbl, tag_lbl, clip = self._row_widgets[idx]
+            selected = idx == new_idx
+            row_bg = ACCENT if selected else (PINNED_ROW if clip.get("pinned") else WHITE)
+            row_fg = "#FFFFFF" if selected else TEXT_DARK
+            for w in (row, pin_lbl, type_lbl, text_lbl):
+                w.config(bg=row_bg)
+            type_lbl.config(fg=row_fg)
+            text_lbl.config(fg=row_fg)
+            pin_lbl.config(fg="#FFFFFF" if selected else PIN)
+            if tag_lbl:
+                tag_lbl.config(bg=row_bg,
+                               fg="#FFFFFF" if selected else get_tag_color(clip.get("tag")))
+            hover_bg = "#2F2F4A"
+            widgets = (row, pin_lbl, type_lbl, text_lbl)
+            if selected:
+                for w in widgets:
+                    w.unbind("<Enter>")
+                    w.unbind("<Leave>")
+            else:
+                for w in widgets:
+                    w.bind("<Enter>", lambda e, wl=widgets:
+                           [x.config(bg=hover_bg) for x in wl])
+                    w.bind("<Leave>", lambda e, wl=widgets, bg=row_bg:
+                           [x.config(bg=bg) for x in wl])
 
     def _make_row(self, idx: int, clip: dict):
         selected = idx == self._selected
@@ -285,14 +395,16 @@ class QuickPasteLauncher:
         type_lbl.pack(side="left")
 
         if is_image:
-            preview = "Image"
+            _d = clip.get("date", "")
+            preview = f"📸 Screenshot  ·  {_d.replace(', ', '  ·  ')}" if _d else "📸 Screenshot"
         else:
-            raw     = clip["text"].replace("\n", " ").replace("\t", " ")
+            raw     = clip["text"].replace("\r", "").replace("\n", " ").replace("\t", " ")
             preview = raw[:58] + "…" if len(raw) > 58 else raw
 
         text_lbl = tk.Label(row, text=preview,
                             bg=row_bg, fg=row_fg,
-                            font=("Segoe UI", 10), anchor="w", padx=4)
+                            font=("Segoe UI", 10), anchor="w", padx=4,
+                            height=1)
         text_lbl.pack(side="left", fill="x", expand=True)
 
         tag = clip.get("tag")
@@ -303,11 +415,15 @@ class QuickPasteLauncher:
                                  font=("Segoe UI", 8, "bold"), padx=6, pady=4)
             tag_lbl.pack(side="right", padx=(0, 6))
 
+        self._row_widgets.append((row, pin_lbl, type_lbl, text_lbl,
+                                  tag_lbl if tag else None, clip))
+
         # Single click → paste plain immediately
         for widget in (row, pin_lbl, type_lbl, text_lbl):
             widget.bind("<Button-1>", lambda e, i=idx: self._click_row(i))
         if tag:
             tag_lbl.bind("<Button-1>", lambda e, i=idx: self._click_row(i))
+
 
         if not selected:
             hover_bg = "#2F2F4A"
@@ -327,7 +443,7 @@ class QuickPasteLauncher:
             self._confirm_paste_plain()
             return
         self._smart_mode    = True
-        self._smart_opt_idx = 0
+        self._smart_opt_idx = _suggest_format(clip["text"])
         self._refresh_smart_bar()
         self._smart_bar.pack(fill="x", before=self._footer)
         self._footer_hint.config(text="← → navigate    Enter confirm    Esc cancel")
@@ -380,21 +496,34 @@ class QuickPasteLauncher:
     def _on_up(self):
         if self._smart_mode:
             return
-        self._move_selection(-1)
+        self._nav_throttled(-1)
 
     def _on_down(self):
         if self._smart_mode:
             return
-        self._move_selection(1)
+        self._nav_throttled(1)
+
+    def _nav_throttled(self, direction: int):
+        import time
+        now = time.time()
+        if now - self._last_nav_time < 0.08:
+            return
+        self._last_nav_time = now
+        self._move_selection(direction)
 
     # ── Navigation & selection ─────────────────────────────────────────────
 
     def _move_selection(self, direction: int):
         if not self._clips:
             return
+        old = self._selected
         self._selected = (self._selected + direction) % len(self._clips)
-        self._render_list()
-        self._scroll_to_selected()
+        if self._row_widgets:
+            self._update_highlight(old, self._selected)
+            self._scroll_to_selected()
+        else:
+            self._render_list()
+            self._scroll_to_selected()
 
     def _scroll_to_selected(self):
         try:
@@ -434,6 +563,8 @@ class QuickPasteLauncher:
 
     def _do_paste(self, clip: dict):
         if clip.get("type") == "image":
+            if self._suppress_fn:
+                self._suppress_fn()
             clipboard.set_clipboard_image(clip["text"].strip())
         else:
             clipboard.set_clipboard(clip["text"].strip())
@@ -446,6 +577,8 @@ class QuickPasteLauncher:
         self._root.after(80, self._simulate_paste)
 
     def _do_paste_text(self, text: str):
+        if self._suppress_fn:
+            self._suppress_fn()
         clipboard.set_clipboard(text)
         if self._prev_hwnd:
             try:
@@ -519,7 +652,6 @@ class QuickPasteLauncher:
             ]),
             ("Search", [
                 ("#tag",         "Filter clips by tag"),
-                ("any text",     "Fuzzy search clips"),
             ]),
         ]
 

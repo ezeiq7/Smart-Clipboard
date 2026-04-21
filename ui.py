@@ -39,6 +39,8 @@ def _looks_like_sensitive(text):
             return False
         if re.search(r'[/\\]', t):                               # file path
             return False
+        if re.match(r'^[a-zA-ZæøåÆØÅ]+-[a-zA-ZæøåÆØÅ-]+$', t): # hyphenated word
+            return False
         if re.fullmatch(r'[\w\-.]+\.[a-zA-Z]{2,5}', t):         # filename like README.md
             return False
         if re.fullmatch(r'[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}', t): # email address
@@ -54,8 +56,6 @@ def _looks_like_sensitive(text):
 def _looks_like_code(text):
     """Returns True if text looks like code and should preserve formatting."""
     code_hints = [
-        "\n    ",      # indented lines (Python style)
-        "\n\t",        # tab indented
         "def ",
         "class ",
         "import ",
@@ -69,7 +69,8 @@ def _looks_like_code(text):
         "();",
         "#include",
     ]
-    return any(hint in text for hint in code_hints)
+    matches = sum(1 for hint in code_hints if hint in text)
+    return matches >= 2
 
 def _detect_delimiter(text):
     """Return the first delimiter found in text (comma, semicolon, pipe), or None."""
@@ -224,30 +225,35 @@ class ShortcutsCard:
 class App:
     def __init__(self, startup=False):
         self.root = tk.Tk()
-        self.root.title("Smart Clipboard ")
-        self.root.geometry("820x520")
-        self.root.resizable(False, False)
-        self.root.configure(bg=BG)
 
+        # Apply icon before anything renders so the tkinter feather never shows
         import os, sys
         _base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
         ico = os.path.join(_base, "SmartClipboard_1.ico")
         if not os.path.exists(ico):
             ico = "SmartClipboard_1.ico"
+        try:
+            self.root.iconbitmap(default=ico)
+            self.root.iconbitmap(ico)
+        except Exception:
+            pass
 
-        def _apply_icon():
-            try:
-                self.root.iconbitmap(default=ico)
-                self.root.iconbitmap(ico)
-            except Exception:
-                pass
+        if startup:
+            self.root.withdraw()
+        self.root.title("Smart Clipboard ")
+        self.root.resizable(False, False)
+        self.root.update_idletasks()
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        x  = (sw - 820) // 2 - 80
+        y  = (sh - 520) // 2 - 60
+        self.root.geometry(f"820x520+{x}+{y}")
+        self.root.configure(bg=BG)
 
-        _apply_icon()
-        self.root.after(0, _apply_icon)
-
-        self._incognito       = False
-        self._incognito_clips = []
-        self._pending_split_text = None
+        self._incognito           = False
+        self._incognito_clips     = []
+        self._pending_split_text  = None
+        self._suppress_next_capture = False
         self._peek_window      = None
         self._peek_locked      = False
         self._peek_last_x      = None
@@ -265,7 +271,7 @@ class App:
         )
         tray.set_tray_title(self.tray_icon, self._active)
         from launcher import QuickPasteLauncher
-        self._launcher = QuickPasteLauncher(self.root)
+        self._launcher = QuickPasteLauncher(self.root, suppress_fn=lambda: setattr(self, '_suppress_next_capture', True))
         def _sc(*keys):
             """Return True when global shortcuts AND all listed individual keys are enabled."""
             s = storage.load_settings()
@@ -273,12 +279,12 @@ class App:
 
         shortcut.start_listener(
             self._on_clipboard_change,
-            lambda: self._on_pin_shortcut() if _sc("shortcut_pin") else None,
-            launcher_callback=lambda hwnd: self.root.after(0, lambda: self._launcher.open(hwnd)) if _sc("shortcut_launcher") else None,
+            lambda: self._on_pin_shortcut() if (self._active and _sc("shortcut_pin")) else None,
+            launcher_callback=lambda hwnd: self.root.after(0, lambda: self._launcher.open(hwnd)) if (self._active and _sc("shortcut_launcher")) else None,
             toggle_callback=lambda: self.root.after(0, self._toggle_active) if _sc("shortcut_toggle") else None,
-            incognito_callback=lambda: self.root.after(0, self._toggle_incognito) if _sc("shortcut_incognito") else None,
+            incognito_callback=lambda: self.root.after(0, self._toggle_incognito) if (self._active and _sc("shortcut_incognito")) else None,
             show_callback=lambda: self.root.after(0, self._show_window) if (self._active and _sc("shortcut_show")) else None,
-            hotkey_clip_callback=lambda slot, hwnd: self.root.after(0, lambda s=slot, h=hwnd: self._on_hotkey_clip(s, h)) if _sc("shortcut_hotkey_clips") else None,
+            hotkey_clip_callback=lambda slot, hwnd: self.root.after(0, lambda s=slot, h=hwnd: self._on_hotkey_clip(s, h)) if (self._active and _sc("shortcut_hotkey_clips")) else None,
             peek_show_callback=lambda: self.root.after(0, self._peek_show) if (self._active and _sc("shortcut_peek")) else None,
             peek_dismiss_callback=lambda: self.root.after(0, self._peek_dismiss),
             peek_hide_callback=lambda: self.root.after(0, self._peek_hide),
@@ -287,9 +293,6 @@ class App:
         if not storage.load_settings().get("onboarding_complete"):
             from onboarding import Onboarding
             Onboarding(self).start()
-
-        if startup:
-            self.root.withdraw()
 
     def _add_to_startup(self):
         import winreg, sys
@@ -511,6 +514,7 @@ class App:
                   cursor="hand2", bd=0, command=_confirm).pack(side="left")
 
         popup.bind("<Escape>", lambda _: _cancel())
+        popup.bind("<Return>", lambda _: self.root.after(1, _confirm))
         popup.grab_set()
         popup.focus_force()
 
@@ -640,6 +644,7 @@ class App:
                       lambda e: self.listbox.yview_moveto(
                           (sb_thumb.winfo_y() + e.y) / sb_frame.winfo_height()))
         self.listbox.bind("<Double-Button-1>", self._double_click_copy)
+        self.listbox.bind("<Control-Button-1>", self._ctrl_click)
         self.listbox.bind("<<ListboxSelect>>", self._on_select)
         self.listbox.bind("<Delete>", lambda e: self._delete_selected())
         # Keyboard shortcuts active when listbox has focus
@@ -678,7 +683,7 @@ class App:
         self.preview_meta = tk.Label(prev_hdr, text="",
                                      font=("Segoe UI", 8),
                                      bg=HEADER_BG, fg=TEXT_GRAY)
-        self.preview_meta.pack(side="right")
+        self.preview_meta.pack(side="left", padx=(8, 0))
 
         self.preview_text = tk.Text(
             right,
@@ -778,6 +783,9 @@ class App:
         self.root.after(0, lambda: self._save_content(content))
 
     def _save_content(self, content):
+        if self._suppress_next_capture:
+            self._suppress_next_capture = False
+            return
         if not self._active:
             return
         from PIL import Image
@@ -791,13 +799,14 @@ class App:
             return
         if isinstance(content, Image.Image):
             path = storage.save_image(content)
-            storage.save_clip(path, clip_type="image")
+            storage.save_clip(path, clip_type="image", source="")
             self._refresh_list()
-            self._show_toast("Image saved 🖼")
+            
         else:
             if len(content) < 3:
                 return
-            if _looks_like_sensitive(content):
+            if not storage.load_settings().get("store_sensitive", False) \
+                    and _looks_like_sensitive(content):
                 self._show_toast("Sensitive content skipped 🔒")
                 return
             if _is_excluded_app():
@@ -813,9 +822,7 @@ class App:
             self._refresh_list()
             if is_new and _looks_like_splittable(content):
                 self._pending_split_text = content
-                self._show_toast("Looks like a list — open Smart Clipboard and press X to split 📋")
-        if self.root.state() == "withdrawn":
-            self.root.iconify()
+                self._show_toast("Looks like a list — open Smart Clipboard and press X to split 📋", duration=2000)
 
     def _on_pin_shortcut(self):
         self.root.after(0, self._copy_and_pin)
@@ -845,12 +852,10 @@ class App:
                     storage.toggle_pin(path)
                     self._show_toast("Image Unpinned!")
             else:
-                storage.save_clip(path, clip_type="image")
+                storage.save_clip(path, clip_type="image", source="")
                 storage.toggle_pin(path)
                 self._show_toast("📌 Image Saved & Pinned!")
             self._refresh_list()
-            if self.root.state() == "withdrawn":
-                self.root.iconify()
             return
 
         # Fall back to text
@@ -881,25 +886,33 @@ class App:
             self._show_toast("📌 Saved & Pinned!")
 
         self._refresh_list()
-        if self.root.state() == "withdrawn":
-            self.root.iconify()
 
     # ── Toast ──────────────────────────────────────────────────────────────
 
-    def _show_toast(self, message):
+    def _show_toast(self, message, duration=6500):
+        was_withdrawn = self.root.state() == "withdrawn"
         toast = tk.Toplevel(self.root)
         toast.overrideredirect(True)
         toast.attributes("-alpha", 0.0)
         toast.attributes("-topmost", True)
+        # Creating a Toplevel can surface the parent on Windows — keep it hidden
+        if was_withdrawn:
+            self.root.withdraw()
 
         outer = tk.Frame(toast, bg=ACCENT, padx=1, pady=1)
         outer.pack()
         tk.Label(outer, text=message, bg=HEADER_BG, fg=TEXT_DARK,
                  font=("Segoe UI", 10), padx=14, pady=8).pack()
 
-        self.root.update_idletasks()
-        x = self.root.winfo_x() + self.root.winfo_width() - 240
-        y = self.root.winfo_y() + self.root.winfo_height() - 64
+        toast.update_idletasks()
+        if self.root.state() == "withdrawn":
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            x  = sw - toast.winfo_reqwidth() - 20
+            y  = sh - toast.winfo_reqheight() - 60
+        else:
+            x = self.root.winfo_x() + self.root.winfo_width() - 240
+            y = self.root.winfo_y() + self.root.winfo_height() - 64
         toast.geometry(f"+{x}+{y}")
 
         def fade(a=0.0):
@@ -909,7 +922,7 @@ class App:
                 toast.after(18, lambda: fade(a))
 
         fade()
-        toast.after(6500, toast.destroy)
+        toast.after(duration, toast.destroy)
 
     # ── List actions ───────────────────────────────────────────────────────
 
@@ -936,7 +949,7 @@ class App:
         self.listbox.event_generate("<<ListboxSelect>>")
 
     def _kb_nav_select(self, direction):
-        """Ctrl+Down extends selection, Ctrl+Up shrinks it from the bottom."""
+        """Ctrl+Down/Up — extend selection in the given direction."""
         if isinstance(self.root.focus_get(), tk.Entry):
             return
         n = self.listbox.size()
@@ -949,19 +962,17 @@ class App:
             self.listbox.focus_set()
             return
         if direction == 1:
-            # Extend downward
-            new_idx = min(n - 1, sel[-1] + 1)
-            self.listbox.selection_set(new_idx)
-            self.listbox.see(new_idx)
+            new_idx = sel[-1] + 1
+            while new_idx < n and self._clip_at(new_idx) is None:
+                new_idx += 1
+            if new_idx < n:
+                self.listbox.selection_set(new_idx)
+                self.listbox.see(new_idx)
         else:
-            # Shrink from the bottom (deselect last selected item)
-            if len(sel) > 1:
-                self.listbox.selection_clear(sel[-1])
-                self.listbox.see(sel[-1] - 1)
-            else:
-                # Already single item — move up normally
-                new_idx = max(0, sel[0] - 1)
-                self.listbox.selection_clear(0, tk.END)
+            new_idx = sel[0] - 1
+            while new_idx >= 0 and self._clip_at(new_idx) is None:
+                new_idx -= 1
+            if new_idx >= 0:
                 self.listbox.selection_set(new_idx)
                 self.listbox.see(new_idx)
         self.listbox.focus_set()
@@ -969,8 +980,13 @@ class App:
 
     def _copy_and_close(self):
         """Copy the selected clip then hide the window — keeps you in your workflow."""
+        sel  = self.listbox.curselection()
+        clip = self._clip_at(sel[0]) if sel else None
+        is_template = (clip and clip.get("template") and clip.get("type") != "image"
+                       and clip.get("text", "").count("{") > 0)
         self._copy_selected()
-        self._hide_window()
+        if not is_template:
+            self._hide_window()
 
     def _highlight_merged(self, merged_text):
         storage.set_tag(merged_text, "merged")
@@ -1009,9 +1025,11 @@ class App:
                 self._show_toast("Add {placeholders} to this clip to use as a template")
                 return
         if clip.get("type") == "image":
+            self._suppress_next_capture = True
             clipboard.set_clipboard_image(clip["text"].strip())
             self._show_toast("Image copied 🖼")
         else:
+            self._suppress_next_capture = True
             clipboard.set_clipboard(clip["text"].strip())
             self._show_toast("Copied ✅")
 
@@ -1033,6 +1051,16 @@ class App:
             return
         self._copy_clip(clip)
 
+    def _ctrl_click(self, event):
+        idx = self.listbox.nearest(event.y)
+        if idx < 0 or self._clip_at(idx) is None:
+            return "break"
+        if idx in self.listbox.curselection():
+            self.listbox.selection_clear(idx)
+        else:
+            self.listbox.selection_set(idx)
+        return "break"
+
     def _on_select(self, event):
         sel = self.listbox.curselection()
         if not sel:
@@ -1047,13 +1075,20 @@ class App:
         clip_type = clip.get("type", "text")
 
         # Update preview meta strip
-        parts = [_image_label(clip) if clip_type == "image" else f"📅 {date}"]
-        if tag:
+        parts = []
+        if clip_type == "image":
+            parts.append("📸 Screenshot")
+        else:
+            source = clip.get("source") if isinstance(clip, dict) else None
+            if source:
+                parts.append(source)
+        parts.append(date.replace(", ", "  ·  "))
+        if tag and tag != "merged":
             parts.append(f"🏷 {tag}")
         hk_slot = clip.get("hotkey_slot")
         if hk_slot:
             parts.append(f"⚡ Ctrl+Shift+{hk_slot}")
-        self.preview_meta.config(text="  •  ".join(parts))
+        self.preview_meta.config(text="  ·  ".join(parts))
 
         self.preview_text.config(state="normal")
         self.preview_text.delete("1.0", tk.END)
@@ -1268,8 +1303,9 @@ class App:
             elif choice == "Space":   sep = " "
             else:                     sep = custom_var.get()
             merged = sep.join(texts)
+            self._suppress_next_capture = True
             pyperclip.copy(merged)
-            storage.save_clip(merged, clip_type="text")
+            storage.save_clip(merged, clip_type="text", source="Smart Clipboard")
             popup.destroy()
             self._refresh_list()
             self._highlight_merged(merged)
@@ -1396,22 +1432,22 @@ class App:
             popup.destroy()
             if option == "Separate clips":
                 for p in reversed(pieces):
-                    storage.save_clip(p, clip_type="text")
+                    storage.save_clip(p, clip_type="text", source="Smart Clipboard")
                 self._refresh_list()
                 self._show_toast(f"Split into {len(pieces)} clips ✅")
             elif option == "Bullet list":
                 result = "\n".join(f"• {p}" for p in pieces)
-                storage.save_clip(result, clip_type="text")
+                storage.save_clip(result, clip_type="text", source="Smart Clipboard")
                 self._refresh_list()
                 self._show_toast("Converted to bullet list ✅")
             elif option == "Numbered list":
                 result = "\n".join(f"{i+1}. {p}" for i, p in enumerate(pieces))
-                storage.save_clip(result, clip_type="text")
+                storage.save_clip(result, clip_type="text", source="Smart Clipboard")
                 self._refresh_list()
                 self._show_toast("Converted to numbered list ✅")
             else:
                 result = " ".join(pieces)
-                storage.save_clip(result, clip_type="text")
+                storage.save_clip(result, clip_type="text", source="Smart Clipboard")
                 self._refresh_list()
                 self._show_toast("Joined into one line ✅")
 
@@ -1622,6 +1658,7 @@ class App:
         if not clip:
             self._show_toast(f"No clip on slot {slot}")
             return
+        self._suppress_next_capture = True
         if clip.get("type") == "image":
             clipboard.set_clipboard_image(clip["text"].strip())
         else:
@@ -1638,13 +1675,15 @@ class App:
         try:
             from pynput.keyboard import Controller, Key
             kb = Controller()
-            # Release any modifier keys still held from the hotkey combo
             for mod in (Key.shift, Key.shift_l, Key.shift_r,
                         Key.ctrl,  Key.ctrl_l,  Key.ctrl_r):
                 try:
                     kb.release(mod)
                 except Exception:
                     pass
+            # Invalidate the double-Ctrl timer so the synthetic Ctrl press below
+            # cannot be mistaken for the second tap of a double-Ctrl open sequence.
+            shortcut.reset_ctrl_timer()
             kb.press(Key.ctrl); kb.press('v')
             kb.release('v');    kb.release(Key.ctrl)
         except Exception:
@@ -1666,20 +1705,20 @@ class App:
 
         # Template preview (truncated)
         preview = clip["text"] if len(clip["text"]) <= 120 else clip["text"][:120] + "…"
-        tk.Label(popup, text=preview, font=("Segoe UI", 9), bg=BG, fg=TEXT_GRAY,
-                 wraplength=360, justify="left", padx=16, pady=8).pack(fill="x")
+        tk.Label(popup, text=preview, font=("Segoe UI", 8), bg=BG, fg=TEXT_GRAY,
+                 wraplength=320, justify="left", padx=16, pady=5).pack(fill="x")
 
         tk.Frame(popup, bg=BORDER, height=1).pack(fill="x", padx=16)
 
         # One entry per placeholder
         entries = {}
         today   = __import__("datetime").date.today().strftime("%d %b %Y")
-        form    = tk.Frame(popup, bg=BG, padx=16, pady=10)
+        form    = tk.Frame(popup, bg=BG, padx=16, pady=6)
         form.pack(fill="x")
 
         for ph in placeholders:
             row = tk.Frame(form, bg=BG)
-            row.pack(fill="x", pady=4)
+            row.pack(fill="x", pady=2)
             tk.Label(row, text=f"{{{ph}}}", font=("Segoe UI", 9, "bold"),
                      bg=BG, fg=ACCENT, width=14, anchor="w").pack(side="left")
             wrap = tk.Frame(row, bg=WHITE, highlightbackground=BORDER, highlightthickness=1)
@@ -1687,8 +1726,8 @@ class App:
             var = tk.StringVar(value=today if ph == "date" else "")
             ent = tk.Entry(wrap, textvariable=var, font=("Segoe UI", 10),
                            bg=WHITE, fg=TEXT_DARK, relief="flat", bd=0,
-                           insertbackground=ACCENT, width=28)
-            ent.pack(padx=8, pady=5)
+                           insertbackground=ACCENT)
+            ent.pack(fill="x", padx=8, pady=4)
             ent.bind("<FocusIn>",  lambda _e, w=wrap: w.config(highlightbackground=ACCENT))
             ent.bind("<FocusOut>", lambda _e, w=wrap: w.config(highlightbackground=BORDER))
             entries[ph] = var
@@ -1702,18 +1741,19 @@ class App:
             result = clip["text"]
             for ph, var in entries.items():
                 result = result.replace(f"{{{ph}}}", var.get())
+            self._suppress_next_capture = True
             clipboard.set_clipboard(result)
             self._show_toast("Template copied ✅")
             popup.destroy()
 
-        btn_row = tk.Frame(popup, bg=BG, padx=16, pady=12)
+        btn_row = tk.Frame(popup, bg=BG, padx=16, pady=8)
         btn_row.pack(fill="x")
         popup.bind("<Return>", lambda _e: do_copy())
         tk.Button(btn_row, text="Copy to Clipboard", bg=ACCENT, fg="white",
-                  font=("Segoe UI", 10, "bold"), relief="flat", padx=18, pady=7,
+                  font=("Segoe UI", 9, "bold"), relief="flat", padx=14, pady=5,
                   cursor="hand2", bd=0, command=do_copy).pack(side="right")
         tk.Button(btn_row, text="Cancel", bg=WHITE, fg=TEXT_DARK,
-                  font=("Segoe UI", 10), relief="flat", padx=14, pady=7,
+                  font=("Segoe UI", 9), relief="flat", padx=10, pady=5,
                   cursor="hand2", bd=0, command=popup.destroy).pack(side="right", padx=(0, 8))
 
         # Size & center over main window
@@ -1755,10 +1795,8 @@ class App:
             "6 hours":  6,
             "24 hours": 24,
             "48 hours": 48,
-            "1 week":   168,
-            "2 weeks":  336,
-            "30 days":  720,
-        }
+            "1 week": 168,
+            }
 
         def _current_clip_label(v):
             return str(v) if v else "Unlimited"
@@ -1892,16 +1930,60 @@ class App:
         excluded_entry.bind("<FocusOut>", _on_focus_out)
         excluded_entry.bind("<KeyRelease>", _update_badge)
 
-        tk.Frame(form, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
+        # ── Advanced nav row (inside form, above action bar) ──────────────
+        tk.Frame(form, bg=BORDER, height=1).pack(fill="x", pady=(14, 0))
+        adv_nav_row = tk.Frame(form, bg=BG)
+        adv_nav_row.pack(fill="x", pady=(6, 0))
+        adv_nav_btn = tk.Button(adv_nav_row, text="⚙  Advanced Settings  →",
+                                bg=BG, fg=TEXT_GRAY,
+                                font=("Segoe UI", 9), relief="flat", padx=0, pady=4,
+                                cursor="hand2", bd=0, activebackground=BG,
+                                activeforeground=TEXT_DARK)
+        adv_nav_btn.pack(side="left")
+        _hover(adv_nav_btn, BG, BG, TEXT_GRAY, TEXT_DARK)
+
+        # ── Popup close / save actions ────────────────────────────────────
+        def _on_popup_close():
+            self.root.bind("<Up>",     lambda _e: self._kb_nav(-1))
+            self.root.bind("<Down>",   lambda _e: self._kb_nav(+1))
+            self.root.bind("<Escape>", lambda _e: self._hide_window())
+            popup.destroy()
+
+        # ── Advanced page (hidden until user navigates to it) ─────────────
+        adv_page = tk.Frame(popup, bg=BG, padx=20, pady=16)
+
+        # Advanced page header
+        adv_hdr = tk.Frame(popup, bg=HEADER_BG, padx=16, pady=10)
+        tk.Frame(adv_hdr, bg=ACCENT, height=2).pack(fill="x", side="bottom")
+        tk.Label(adv_hdr, text="⚙  Advanced Settings", font=("Segoe UI", 11, "bold"),
+                 bg=HEADER_BG, fg=TEXT_DARK).pack(anchor="w")
+
+        # ── Session gap ───────────────────────────────────────────────────
+        SESSION_GAP_OPTIONS = {"15 min": 15, "30 min": 30, "60 min": 60}
+
+        def _current_gap_label(v):
+            for label, val in SESSION_GAP_OPTIONS.items():
+                if val == v:
+                    return label
+            return "30 min"
+
+        gap_var, gap_btns, *_ = _option_row(adv_page,
+            "Clipboard Time Machine — session gap",
+            "Groups clips into sessions in the main list. Pinned clips are always at top.",
+            list(SESSION_GAP_OPTIONS.keys()),
+            _current_gap_label(s.get("session_gap_minutes", 30))
+        )
+
+        tk.Frame(adv_page, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
 
         # ── Auto-start toggle ─────────────────────────────────────────────
-        tk.Label(form, text="Launch at startup", font=("Segoe UI", 9, "bold"),
+        tk.Label(adv_page, text="Launch at startup", font=("Segoe UI", 9, "bold"),
                  bg=BG, fg=TEXT_DARK).pack(anchor="w", pady=(14, 2))
-        tk.Label(form, text="Automatically start Smart Clipboard when Windows starts.",
+        tk.Label(adv_page, text="Automatically start Smart Clipboard when Windows starts.",
                  font=("Segoe UI", 8), bg=BG, fg=TEXT_GRAY).pack(anchor="w", pady=(0, 6))
 
         auto_start_var = tk.BooleanVar(value=s.get("auto_start", True))
-        auto_row = tk.Frame(form, bg=BG)
+        auto_row = tk.Frame(adv_page, bg=BG)
         auto_row.pack(anchor="w")
         auto_btns = []
         for label, val in [("On", True), ("Off", False)]:
@@ -1919,16 +2001,16 @@ class App:
             b.pack(side="left", padx=(0, 4))
             auto_btns.append((label, b))
 
-        tk.Frame(form, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
+        tk.Frame(adv_page, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
 
         # ── Global shortcuts toggle ───────────────────────────────────────
-        tk.Label(form, text="Enable global shortcuts", font=("Segoe UI", 9, "bold"),
+        tk.Label(adv_page, text="Enable global shortcuts", font=("Segoe UI", 9, "bold"),
                  bg=BG, fg=TEXT_DARK).pack(anchor="w", pady=(14, 2))
-        tk.Label(form, text="Disable if keyboard shortcuts conflict with other apps.\nChanges take effect on next launch.",
+        tk.Label(adv_page, text="Disable if keyboard shortcuts conflict with other apps.\nChanges take effect on next launch.",
                  font=("Segoe UI", 8), bg=BG, fg=TEXT_GRAY, justify="left").pack(anchor="w", pady=(0, 6))
 
         gs_var = tk.BooleanVar(value=s.get("global_shortcuts", True))
-        gs_row = tk.Frame(form, bg=BG)
+        gs_row = tk.Frame(adv_page, bg=BG)
         gs_row.pack(anchor="w")
         gs_btns = []
         for label, val in [("On", True), ("Off", False)]:
@@ -1953,66 +2035,50 @@ class App:
         personalize_btn.pack(side="left", padx=(8, 0))
         gs_btns.append(("Personalize", personalize_btn))
 
-        tk.Frame(form, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
+        # ── Store sensitive content toggle ────────────────────────────────
+        tk.Frame(adv_page, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
+        tk.Label(adv_page, text="Store sensitive content", font=("Segoe UI", 9, "bold"),
+                 bg=BG, fg=TEXT_DARK).pack(anchor="w", pady=(14, 2))
+        tk.Label(adv_page, text="By default passwords, credit cards and SSNs are blocked.",
+                 font=("Segoe UI", 8), bg=BG, fg=TEXT_GRAY).pack(anchor="w", pady=(0, 6))
 
-        # ── Session gap ───────────────────────────────────────────────────
-        SESSION_GAP_OPTIONS = {"15 min": 15, "30 min": 30, "60 min": 60}
+        sens_var = tk.BooleanVar(value=s.get("store_sensitive", False))
+        sens_row = tk.Frame(adv_page, bg=BG)
+        sens_row.pack(anchor="w")
 
-        def _current_gap_label(v):
-            for label, val in SESSION_GAP_OPTIONS.items():
-                if val == v:
-                    return label
-            return "30 min"
+        # Container always occupies the correct slot in pack order.
+        # The label is shown/hidden inside it so it never re-appends to the end.
+        sens_warn_container = tk.Frame(adv_page, bg=BG)
+        sens_warn_container.pack(anchor="w", fill="x")
+        sens_warning = tk.Label(sens_warn_container,
+                                text="⚠️ Passwords and card numbers will be saved to disk.",
+                                font=("Segoe UI", 8), bg=BG, fg=TEXT_GRAY)
+        if sens_var.get():
+            sens_warning.pack(anchor="w", pady=(4, 0))
 
-        gap_var, gap_btns, *_ = _option_row(form,
-            "Clipboard Time Machine — session gap",
-            "Groups clips into sessions in the main list. Pinned clips are always at top.",
-            list(SESSION_GAP_OPTIONS.keys()),
-            _current_gap_label(s.get("session_gap_minutes", 30))
-        )
+        sens_btns = []
+        for label, val in [("On", True), ("Off", False)]:
+            cur = sens_var.get() == val
+            b = tk.Button(sens_row, text=label, font=("Segoe UI", 9),
+                          bg=ACCENT if cur else WHITE,
+                          fg="white" if cur else TEXT_DARK,
+                          relief="flat", padx=14, pady=5, cursor="hand2", bd=0)
+            def _set_sens(v=val, btn=b):
+                sens_var.set(v)
+                for child in sens_row.winfo_children():
+                    child.config(bg=WHITE, fg=TEXT_DARK)
+                btn.config(bg=ACCENT, fg="white")
+                if v:
+                    sens_warning.pack(anchor="w", pady=(4, 0))
+                else:
+                    sens_warning.pack_forget()
+                _resize_popup()
+            b.config(command=_set_sens)
+            b.pack(side="left", padx=(0, 4))
+            sens_btns.append((label, b))
 
-        # ── Popup close / save actions ────────────────────────────────────
-        def _on_popup_close():
-            self.root.bind("<Up>",     lambda _e: self._kb_nav(-1))
-            self.root.bind("<Down>",   lambda _e: self._kb_nav(+1))
-            self.root.bind("<Escape>", lambda _e: self._hide_window())
-            popup.destroy()
-
-        def save():
-            mc = None if clip_var.get() == "Unlimited" else int(clip_var.get())
-            mh = EXPIRY_OPTIONS[expiry_var.get()]
-            apps = [a.strip() for a in excluded_entry.get().split(",") if len(a.strip()) >= 5]
-            sg = SESSION_GAP_OPTIONS[gap_var.get()]
-            merged = storage.load_settings()   # start from current so shortcut_ keys survive
-            merged.update({"max_clips": mc, "max_hours": mh,
-                           "excluded_apps": apps,
-                           "auto_start": auto_start_var.get(),
-                           "global_shortcuts": gs_var.get(),
-                           "session_gap_minutes": sg})
-            storage.save_settings(merged)
-            self._add_to_startup()
-            self._refresh_list()
-            self._show_toast("Settings saved ✅")
-            _on_popup_close()
-
-        # ── Action buttons (created before nav so they join the grid) ────
-        tk.Frame(popup, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(12, 0))
-        btn_row = tk.Frame(popup, bg=BG, padx=20, pady=12)
-        btn_row.pack(fill="x")
-
-        def _replay_tutorial():
-            _on_popup_close()
-            s2 = storage.load_settings()
-            s2["onboarding_complete"] = False
-            storage.save_settings(s2)
-            from onboarding import Onboarding
-            Onboarding(self).start()
-
-        replay_btn = tk.Button(btn_row, text="↺  Replay tutorial",
-                               bg=WHITE, fg=TEXT_GRAY,
-                               font=("Segoe UI", 9), relief="flat", padx=12, pady=7,
-                               cursor="hand2", bd=0, command=_replay_tutorial)
-        replay_btn.pack(side="left")
+        # ── Export clips (advanced page) ──────────────────────────────────
+        tk.Frame(adv_page, bg=BORDER, height=1).pack(fill="x", pady=(12, 0))
 
         def _export_clips():
             import tkinter.filedialog as fd, json as _json
@@ -2038,105 +2104,202 @@ class App:
                     _json.dump(clips, f, indent=2, ensure_ascii=False)
             self._show_toast(f"Exported {len(clips)} clips ✅")
 
-        export_btn = tk.Button(btn_row, text="⬆  Export clips",
+        export_btn = tk.Button(adv_page, text="⬆  Export clips",
                                bg=WHITE, fg=TEXT_GRAY,
                                font=("Segoe UI", 9), relief="flat", padx=12, pady=7,
                                cursor="hand2", bd=0, command=_export_clips)
-        export_btn.pack(side="left", padx=(8, 0))
+        export_btn.pack(anchor="w", pady=(12, 0))
+
+        # ── Page switching ────────────────────────────────────────────────
+        def _resize_popup():
+            popup.update_idletasks()
+            ph = popup.winfo_reqheight()
+            sw = popup.winfo_screenwidth()
+            sh = popup.winfo_screenheight()
+            x = (sw - 420) // 2
+            y = max(0, min((sh - ph) // 2 - 60, sh - ph))
+            popup.geometry(f"420x{ph}+{x}+{y}")
+
+        def _show_adv_page():
+            hdr.pack_forget()
+            form.pack_forget()
+            main_sep.pack_forget()
+            btn_row.pack_forget()
+            adv_hdr.pack(fill="x")
+            adv_page.pack(fill="x")
+            adv_sep.pack(fill="x", padx=20, pady=(12, 0))
+            adv_btn_row.pack(fill="x")
+            _resize_popup()
+            _switch_page("adv")
+
+        adv_nav_btn.config(command=_show_adv_page)
+
+        def _show_main_page():
+            adv_hdr.pack_forget()
+            adv_page.pack_forget()
+            adv_sep.pack_forget()
+            adv_btn_row.pack_forget()
+            hdr.pack(fill="x")
+            form.pack(fill="x")
+            main_sep.pack(fill="x", padx=20, pady=(12, 0))
+            btn_row.pack(fill="x")
+            _resize_popup()
+            _switch_page("main")
+
+        def save():
+            mc = None if clip_var.get() == "Unlimited" else int(clip_var.get())
+            mh = EXPIRY_OPTIONS[expiry_var.get()]
+            apps = [a.strip() for a in excluded_entry.get().split(",") if len(a.strip()) >= 5]
+            sg = SESSION_GAP_OPTIONS[gap_var.get()]
+            merged = storage.load_settings()
+            merged.update({"max_clips": mc, "max_hours": mh,
+                           "excluded_apps": apps,
+                           "auto_start": auto_start_var.get(),
+                           "global_shortcuts": gs_var.get(),
+                           "session_gap_minutes": sg,
+                           "store_sensitive": sens_var.get()})
+            storage.save_settings(merged)
+            self._add_to_startup()
+            self._refresh_list()
+            self._show_toast("Settings saved ✅")
+            _on_popup_close()
+
+        # ── Main page action buttons ──────────────────────────────────────
+        main_sep = tk.Frame(popup, bg=BORDER, height=1)
+        btn_row   = tk.Frame(popup, bg=BG, padx=20, pady=12)
+
+        def _replay_tutorial():
+            _on_popup_close()
+            s2 = storage.load_settings()
+            s2["onboarding_complete"] = False
+            storage.save_settings(s2)
+            from onboarding import Onboarding
+            Onboarding(self).start()
+
+        replay_btn = tk.Button(btn_row, text="↺  Replay tutorial",
+                               bg=WHITE, fg=TEXT_GRAY,
+                               font=("Segoe UI", 9), relief="flat", padx=12, pady=7,
+                               cursor="hand2", bd=0, command=_replay_tutorial)
+        replay_btn.pack(side="left")
+
+        def _give_feedback():
+            import webbrowser
+            webbrowser.open("https://github.com/ezeiq7/Smart-Clipboard/issues")
+
+        feedback_btn = tk.Button(btn_row, text="💬  Give Feedback",
+                                 bg=WHITE, fg=TEXT_GRAY,
+                                 font=("Segoe UI", 9), relief="flat", padx=12, pady=7,
+                                 cursor="hand2", bd=0, command=_give_feedback)
+        feedback_btn.pack(side="left", padx=(8, 0))
 
         save_btn = tk.Button(btn_row, text="Save", bg=ACCENT, fg="white",
-                             font=("Segoe UI", 10, "bold"), relief="flat", padx=14, pady=7,
+                             font=("Segoe UI", 9, "bold"), relief="flat", padx=14, pady=7,
                              cursor="hand2", bd=0, command=save)
         save_btn.pack(side="right")
         cancel_btn = tk.Button(btn_row, text="Cancel", bg=WHITE, fg=TEXT_DARK,
-                               font=("Segoe UI", 10, "bold"), relief="flat", padx=14, pady=7,
+                               font=("Segoe UI", 9, "bold"), relief="flat", padx=14, pady=7,
                                cursor="hand2", bd=0, command=_on_popup_close)
-        cancel_btn.pack(side="right", padx=(18, 7))
+        cancel_btn.pack(side="right", padx=(8, 8))
 
+        # Pack main page
+        main_sep.pack(fill="x", padx=20, pady=(12, 0))
+        btn_row.pack(fill="x")
+
+        # ── Advanced page action buttons ──────────────────────────────────
+        adv_sep     = tk.Frame(popup, bg=BORDER, height=1)
+        adv_btn_row = tk.Frame(popup, bg=BG, padx=20, pady=12)
+
+        back_btn = tk.Button(adv_btn_row, text="← Back",
+                             bg=WHITE, fg=TEXT_GRAY,
+                             font=("Segoe UI", 9), relief="flat", padx=12, pady=7,
+                             cursor="hand2", bd=0, command=_show_main_page)
+        back_btn.pack(side="left")
+
+        adv_save_btn = tk.Button(adv_btn_row, text="Save", bg=ACCENT, fg="white",
+                                 font=("Segoe UI", 10, "bold"), relief="flat", padx=14, pady=7,
+                                 cursor="hand2", bd=0, command=save)
+        adv_save_btn.pack(side="right")
+        adv_cancel_btn = tk.Button(adv_btn_row, text="Cancel", bg=WHITE, fg=TEXT_DARK,
+                                   font=("Segoe UI", 10, "bold"), relief="flat", padx=14, pady=7,
+                                   cursor="hand2", bd=0, command=_on_popup_close)
+        adv_cancel_btn.pack(side="right", padx=(8, 8))
 
         # ── Keyboard navigation ───────────────────────────────────────────
-        # All button rows top-to-bottom, including action bar
-        action_btns = [("↺ Replay", replay_btn), ("⬆ Export", export_btn),
-                       ("Cancel", cancel_btn), ("Save", save_btn)]
-        all_rows = [clip_btns, expiry_btns, auto_btns, gs_btns, gap_btns, action_btns]
-        row_of    = {}   # btn → row index
-        idx_of    = {}   # btn → index within its row
-        for ri, row in enumerate(all_rows):
-            for ci, (_, b) in enumerate(row):
-                row_of[b] = ri
-                idx_of[b] = ci
+        # Separate row maps per page so navigation never crosses invisible buttons.
+        # A single popup-level binding drives everything; no per-button bindings.
 
-        def _focus_btn(b):
+        action_btns     = [("↺", replay_btn), ("💬", feedback_btn),
+                           ("Cancel", cancel_btn), ("Save", save_btn)]
+        adv_action_btns = [("← Back", back_btn), ("Cancel", adv_cancel_btn),
+                           ("Save", adv_save_btn)]
+
+        main_rows = [clip_btns, expiry_btns, [("Advanced →", adv_nav_btn)], action_btns]
+        adv_rows  = [gap_btns, auto_btns, gs_btns, sens_btns, [("Export", export_btn)], adv_action_btns]
+
+        nav = {"page": "main", "main": [0, 0], "adv": [0, 0]}
+
+        def _cur_rows():
+            return main_rows if nav["page"] == "main" else adv_rows
+
+        def _cur_pos():
+            return nav[nav["page"]]
+
+        def _highlight():
+            # Clear all highlights across both pages, then mark active cursor.
+            for rows in (main_rows, adv_rows):
+                for row in rows:
+                    for _, b in row:
+                        b.config(highlightthickness=0)
+            rows = _cur_rows()
+            ri, ci = _cur_pos()
+            b = rows[ri][ci][1]
+            b.config(highlightthickness=2, highlightbackground=KB_CURSOR)
             b.focus_set()
-            ri  = row_of[b]
-            ci  = idx_of[b]
-            row = all_rows[ri]
-            for i, (_, rb) in enumerate(row):
-                rb.config(
-                    highlightthickness=2 if i == ci else 0,
-                    highlightbackground=KB_CURSOR,
-                )
 
-        def _on_btn_key(event, btn):
-            key = event.keysym
-            ri  = row_of[btn]
-            ci  = idx_of[btn]
+        def _switch_page(page):
+            nav["page"] = page
+            nav[page]   = [0, 0]   # reset cursor to first button on the new page
+            _highlight()
 
-            if key == "Left":
-                new_ci = (ci - 1) % len(all_rows[ri])
-                _focus_btn(all_rows[ri][new_ci][1])
-                return "break"
-            if key == "Right":
-                new_ci = (ci + 1) % len(all_rows[ri])
-                _focus_btn(all_rows[ri][new_ci][1])
-                return "break"
-            if key == "Up":
-                new_ri  = (ri - 1) % len(all_rows)
-                src_len = len(all_rows[ri])
-                dst_len = len(all_rows[new_ri])
-                new_ci  = min(round(ci * max(dst_len - 1, 0) / max(src_len - 1, 1)), dst_len - 1)
-                _focus_btn(all_rows[new_ri][new_ci][1])
-                return "break"
-            if key == "Down":
-                new_ri  = (ri + 1) % len(all_rows)
-                src_len = len(all_rows[ri])
-                dst_len = len(all_rows[new_ri])
-                new_ci  = min(round(ci * max(dst_len - 1, 0) / max(src_len - 1, 1)), dst_len - 1)
-                _focus_btn(all_rows[new_ri][new_ci][1])
-                return "break"
-            if key in ("Return", "space"):
-                btn.invoke()
-                return "break"
+        def _move(dr, dc):
+            if popup.focus_get() is excluded_entry:
+                return
+            rows   = _cur_rows()
+            pos    = _cur_pos()
+            ri, ci = pos[0], pos[1]
+            if dc != 0:
+                pos[1] = (ci + dc) % len(rows[ri])
+            else:
+                new_ri = (ri + dr) % len(rows)
+                pos[0] = new_ri
+                pos[1] = min(ci, len(rows[new_ri]) - 1)
+            _highlight()
 
-        all_btns_flat = [b for row in all_rows for _, b in row]
-        for _, b in [(c, btn) for row in all_rows for (c, btn) in row]:
-            b.config(takefocus=1)
-            b.bind("<Left>",   lambda e, btn=b: _on_btn_key(e, btn))
-            b.bind("<Right>",  lambda e, btn=b: _on_btn_key(e, btn))
-            b.bind("<Up>",     lambda e, btn=b: _on_btn_key(e, btn))
-            b.bind("<Down>",   lambda e, btn=b: _on_btn_key(e, btn))
-            b.bind("<Return>", lambda e, btn=b: _on_btn_key(e, btn))
-            b.bind("<space>",  lambda e, btn=b: _on_btn_key(e, btn))
+        def _invoke():
+            if popup.focus_get() is excluded_entry:
+                return
+            rows   = _cur_rows()
+            ri, ci = _cur_pos()
+            rows[ri][ci][1].invoke()
 
-        # Disable main window keys while popup is open
+        for rows in (main_rows, adv_rows):
+            for row in rows:
+                for _, b in row:
+                    b.config(takefocus=0)
+
+        # Disable main window arrow keys while popup is open
         self.root.unbind("<Up>")
         self.root.unbind("<Down>")
         self.root.unbind("<Escape>")
 
         popup.protocol("WM_DELETE_WINDOW", _on_popup_close)
         popup.bind("<Escape>", lambda _e: _on_popup_close())
-        popup.bind("<Return>", lambda _e: save())
-
-        def _route_key(e):
-            focused = popup.focus_get()
-            if focused and focused in all_btns_flat:
-                _on_btn_key(e, focused)
-            return "break"
-
-        popup.bind("<Left>",  _route_key)
-        popup.bind("<Right>", _route_key)
-        popup.bind("<Up>",    _route_key)
-        popup.bind("<Down>",  _route_key)
+        popup.bind("<Left>",   lambda _e: (_move(0, -1), "break")[1])
+        popup.bind("<Right>",  lambda _e: (_move(0, +1), "break")[1])
+        popup.bind("<Up>",     lambda _e: (_move(-1, 0), "break")[1])
+        popup.bind("<Down>",   lambda _e: (_move(+1, 0), "break")[1])
+        popup.bind("<Return>", lambda _e: (_invoke(),    "break")[1])
+        popup.bind("<space>",  lambda _e: (_invoke(),    "break")[1])
 
         # Size and center on screen — clamped so the popup is always fully visible
         popup.update_idletasks()
@@ -2154,9 +2317,10 @@ class App:
         popup.lift()
         popup.focus_force()
 
-        # Focus correct button after window is visible
+        # Focus the currently-selected clip-limit button on open
         first_focus_idx = CLIP_OPTIONS.index(_current_clip_label(s.get("max_clips")))
-        popup.after(50, lambda: _focus_btn(clip_btns[first_focus_idx][1]))
+        nav["main"] = [0, first_focus_idx]
+        popup.after(50, _highlight)
 
     # ── Shortcut personalisation popup ────────────────────────────────────────
 
@@ -2524,7 +2688,10 @@ class App:
             base = storage.search_clips(query)
             if incognito:
                 q = query.lower()
-                incognito = [c for c in incognito if q in c["text"].lower()]
+                _words = [w for w in q.split() if w]
+                incognito = [c for c in incognito
+                             if q in c["text"].lower()
+                             or (bool(_words) and all(w in c["text"].lower() for w in _words))]
             return incognito + base
         if tag_filter != "all":
             return storage.filter_by_tag(tag_filter)
@@ -2638,10 +2805,9 @@ class App:
             total = 0
         else:
             # Decide whether to show session headers
-            query      = self.search_var.get()     if hasattr(self, "search_var")     else ""
             tag_filter = self.tag_filter_var.get() if hasattr(self, "tag_filter_var") else "all"
             sort       = self.sort_var.get()        if hasattr(self, "sort_var")       else "Newest"
-            use_headers = (not query and tag_filter == "all" and sort in ("Newest", "Oldest"))
+            use_headers = (tag_filter == "all" and sort in ("Newest", "Oldest"))
 
             if use_headers:
                 gap = storage.load_settings().get("session_gap_minutes", 30)
@@ -2690,14 +2856,36 @@ class App:
     _PEEK_W   = 380   # fixed overlay width  (px)
     _PEEK_MAX = 650   # max overlay height   (px)
 
+    def _peek_render_image_body(self, parent, clip):
+        """Render an image thumbnail (or fallback text) into the peek body frame."""
+        try:
+            from PIL import Image, ImageTk
+            path = clip.get("text", "").strip()
+            img  = Image.open(path)
+            img.thumbnail((340, 200))
+            photo = ImageTk.PhotoImage(img)
+            lbl   = tk.Label(parent, image=photo, bg=HEADER_BG, cursor="arrow")
+            lbl.image = photo          # keep alive on the widget
+            self._peek_img_ref = photo # keep alive on self
+            lbl.pack(anchor="center", pady=4)
+        except Exception:
+            tk.Label(parent, text="🖼  Image not found",
+                     font=("Segoe UI", 10), bg=HEADER_BG, fg=TEXT_DARK).pack(anchor="w")
+
     def _peek_show(self):
         """Show the compact floating peek overlay with the most recent clip."""
         if self._peek_window and self._peek_window.winfo_exists():
             return
 
-        # Load all clips — incognito session clips first, then persisted clips (pinned-first order)
+        # Load all clips — pure chronological newest-to-oldest, pinned mixed in by date
         import pyperclip
-        stored = list(self._sorted_clips())
+        from datetime import datetime
+        def _date_key(c):
+            try:
+                return datetime.strptime(c.get("date", ""), "%d %b %Y, %H:%M")
+            except Exception:
+                return datetime.min
+        stored = sorted(storage.load_clips(), key=_date_key, reverse=True)
         if self._incognito:
             base_clips = list(self._incognito_clips) + stored
         else:
@@ -2726,7 +2914,7 @@ class App:
         self._peek_idx  = 0
         c0 = self._peek_clips[0]
         self._peek_is_image  = c0.get("type") == "image"
-        self._peek_full_text = "🖼  Image" if self._peek_is_image else c0.get("text", "")
+        self._peek_full_text = ("📸  Screenshot  ·  " + c0.get("date","").replace(", ","  ·  ")) if self._peek_is_image else c0.get("text", "")
 
         # ── Build window ───────────────────────────────────────────────
         self._peek_window = tk.Toplevel(self.root)
@@ -2767,6 +2955,12 @@ class App:
         self._peek_lock_lbl = tk.Label(hdr, text="click to lock",
                  font=("Segoe UI", 7), bg=HEADER_BG, fg=TEXT_GRAY)
         self._peek_lock_lbl.pack(side="right")
+        self._peek_pin_lbl = tk.Label(hdr, text=" 📌 ",
+                 font=("Segoe UI", 8, "bold"), bg=ACCENT, fg="white",
+                 padx=2, pady=1)
+        c0_pinned = self._peek_clips[0].get("pinned") if self._peek_clips else False
+        if c0_pinned:
+            self._peek_pin_lbl.pack(side="right", padx=(0, 4))
         tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=(0, 8))
 
         # Body: expands to fill available space between header and footer
@@ -2791,8 +2985,7 @@ class App:
         else:
             self._peek_txt = None
             self._peek_wrap_frame = None
-            tk.Label(self._peek_body, text="🖼  Image clip",
-                     font=("Segoe UI", 10), bg=HEADER_BG, fg=TEXT_DARK).pack(anchor="w")
+            self._peek_render_image_body(self._peek_body, c0)
 
         # Footer — left hint + right resize hint
         tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=(8, 4))
@@ -2906,15 +3099,33 @@ class App:
         self._peek_idx = (self._peek_idx + direction) % len(self._peek_clips)
         clip = self._peek_clips[self._peek_idx]
         self._peek_is_image  = clip.get("type") == "image"
-        self._peek_full_text = "🖼  Image" if self._peek_is_image else clip.get("text", "")
+        self._peek_full_text = ("📸  Screenshot  ·  " + clip.get("date","").replace(", ","  ·  ")) if self._peek_is_image else clip.get("text", "")
 
-        # Update text widget
-        if getattr(self, "_peek_txt", None):
+        # Rebuild body content when navigating
+        if getattr(self, "_peek_body", None):
             try:
-                self._peek_txt.config(state="normal")
-                self._peek_txt.delete("1.0", "end")
-                self._peek_txt.insert("1.0", self._peek_full_text)
-                self._peek_txt.config(state="disabled")
+                for w in self._peek_body.winfo_children():
+                    w.destroy()
+                self._peek_txt        = None
+                self._peek_wrap_frame = None
+                if self._peek_is_image:
+                    if self._peek_locked:
+                        self._peek_build_image_canvas(self._peek_body, clip)
+                    else:
+                        self._peek_render_image_body(self._peek_body, clip)
+                else:
+                    wrap_frame = tk.Frame(self._peek_body, bg=BORDER, padx=1, pady=1)
+                    wrap_frame.pack(fill="both", expand=True)
+                    self._peek_txt = tk.Text(
+                        wrap_frame, font=("Segoe UI", 10),
+                        bg=WHITE, fg=TEXT_DARK,
+                        relief="flat", bd=0, wrap="word",
+                        padx=8, pady=6, state="normal",
+                        highlightthickness=0, cursor="ibeam", height=50)
+                    self._peek_txt.insert("1.0", self._peek_full_text)
+                    self._peek_txt.config(state="disabled")
+                    self._peek_txt.pack(fill="both", expand=True)
+                    self._peek_wrap_frame = wrap_frame
             except Exception:
                 pass
 
@@ -2926,6 +3137,36 @@ class App:
                     text=f"{self._peek_idx + 1} / {total}", fg=TEXT_GRAY)
             except Exception:
                 pass
+
+        # Update pin indicator
+        if getattr(self, "_peek_pin_lbl", None):
+            try:
+                if clip.get("pinned"):
+                    self._peek_pin_lbl.pack(side="right", padx=(0, 4))
+                else:
+                    self._peek_pin_lbl.pack_forget()
+            except Exception:
+                pass
+
+        # Resize window to fit new content (only in unlocked quick-peek mode)
+        if not self._peek_locked:
+            win = self._peek_window
+            if win and win.winfo_exists():
+                try:
+                    if self._peek_is_image:
+                        win.update_idletasks()
+                        oh = min(win.winfo_reqheight(), self._PEEK_MAX)
+                    else:
+                        if getattr(self, "_peek_txt", None):
+                            self._peek_size_text_widget(self._peek_txt, win)
+                        win.update_idletasks()
+                        oh = min(win.winfo_reqheight(), self._PEEK_MAX)
+                    sh = self.root.winfo_screenheight()
+                    cx = win.winfo_x()
+                    cy = min(win.winfo_y(), sh - oh - 48)
+                    win.geometry(f"{self._PEEK_W}x{oh}+{cx}+{cy}")
+                except Exception:
+                    pass
 
     def _peek_position_and_show(self, win):
         """Calculate geometry, apply WS_EX_NOACTIVATE, fade in."""
@@ -2950,6 +3191,8 @@ class App:
         else:
             x = sw - ow - 24
             y = sh - oh - 64
+        # Always clamp so the window never falls off the bottom of the screen
+        y = min(y, sh - oh - 48)
         win.geometry(f"{ow}x{oh}+{x}+{y}")
 
         # Prevent focus theft on show and on click
@@ -2974,6 +3217,117 @@ class App:
                 win.after(16, lambda: _fade(a))
         _fade()
 
+    def _peek_build_image_canvas(self, parent, clip):
+        """Build the zoom/pan canvas viewer for an image clip inside `parent`."""
+        try:
+            from PIL import Image, ImageTk
+            path = clip.get("text", "").strip()
+            orig = Image.open(path)
+
+            canvas_w = self._PEEK_W - 24
+            canvas_h = self._PEEK_MAX - 120
+
+            canvas = tk.Canvas(parent, bg="#1A1A2E",
+                               width=canvas_w, height=canvas_h,
+                               highlightthickness=0, cursor="fleur")
+            canvas.pack(fill="both", expand=True)
+
+            work = orig.copy()
+            work.thumbnail((canvas_w, canvas_h), Image.LANCZOS)
+            work_scale = work.width / orig.width
+
+            _state = {"zoom": 1.0, "pan_x": 0, "pan_y": 0,
+                      "drag_x": 0, "drag_y": 0,
+                      "item": None, "settle_id": None,
+                      "cw": canvas_w, "ch": canvas_h}
+
+            def _place():
+                if _state["item"] is None:
+                    return
+                canvas.coords(_state["item"],
+                              _state["cw"] // 2 + _state["pan_x"],
+                              _state["ch"] // 2 + _state["pan_y"])
+
+            def _render_work():
+                rel   = _state["zoom"] / work_scale
+                w     = max(1, int(work.width  * rel))
+                h     = max(1, int(work.height * rel))
+                photo = ImageTk.PhotoImage(work.resize((w, h), Image.NEAREST))
+                if _state["item"] is None:
+                    _state["item"] = canvas.create_image(
+                        _state["cw"] // 2, _state["ch"] // 2,
+                        anchor="center", image=photo)
+                else:
+                    canvas.itemconfig(_state["item"], image=photo)
+                    _place()
+                canvas._photo = photo
+                self._peek_img_ref = photo
+
+            def _render_hq():
+                w     = max(1, int(orig.width  * _state["zoom"]))
+                h     = max(1, int(orig.height * _state["zoom"]))
+                photo = ImageTk.PhotoImage(orig.resize((w, h), Image.LANCZOS))
+                if _state["item"] is None:
+                    _state["item"] = canvas.create_image(
+                        _state["cw"] // 2, _state["ch"] // 2,
+                        anchor="center", image=photo)
+                else:
+                    canvas.itemconfig(_state["item"], image=photo)
+                    _place()
+                canvas._photo = photo
+                self._peek_img_ref = photo
+
+            def _on_wheel(e):
+                factor   = 1.1 if e.delta > 0 else 0.9
+                fit      = _state.get("fit_zoom", 0.01)
+                new_zoom = _state["zoom"] * factor
+                max_zoom = max(3.0, fit)
+                if new_zoom <= fit:
+                    # Snap to original fit — works for any image size
+                    _state["zoom"]  = fit
+                    _state["pan_x"] = 0
+                    _state["pan_y"] = 0
+                else:
+                    _state["zoom"] = min(max_zoom, new_zoom)
+                _render_work()
+                if _state["settle_id"]:
+                    canvas.after_cancel(_state["settle_id"])
+                _state["settle_id"] = canvas.after(220, _render_hq)
+
+            def _drag_start(e):
+                _state["drag_x"] = e.x
+                _state["drag_y"] = e.y
+
+            def _drag_move(e):
+                _state["pan_x"] += e.x - _state["drag_x"]
+                _state["pan_y"] += e.y - _state["drag_y"]
+                _state["drag_x"] = e.x
+                _state["drag_y"] = e.y
+                _place()
+
+            canvas.bind("<MouseWheel>", _on_wheel)
+            canvas.bind("<Button-1>",   _drag_start)
+            canvas.bind("<B1-Motion>",  _drag_move)
+
+            def _init_render():
+                cw = canvas.winfo_width()
+                ch = canvas.winfo_height()
+                _state["cw"] = cw if cw > 1 else canvas_w
+                _state["ch"] = ch if ch > 1 else canvas_h
+                # Fit image fully inside canvas — no 1.0 cap so small images scale up to fill
+                scale_x = _state["cw"] / orig.width
+                scale_y = _state["ch"] / orig.height
+                fit_zoom = min(scale_x, scale_y)
+                _state["zoom"]     = fit_zoom
+                _state["fit_zoom"] = fit_zoom
+                _render_hq()
+
+            canvas.after(10, _init_render)
+
+        except Exception:
+            tk.Label(parent, text="🖼  Image not found",
+                     font=("Segoe UI", 10), bg=HEADER_BG, fg=TEXT_DARK).pack(anchor="w")
+
     def _peek_expand_to_full(self):
         """Replace the compact body with a scrollable Text widget (locked state)."""
         win = self._peek_window
@@ -2987,8 +3341,8 @@ class App:
         text = self._peek_full_text
 
         if self._peek_is_image:
-            tk.Label(self._peek_body, text="🖼  Image clip",
-                     font=("Segoe UI", 10), bg=HEADER_BG, fg=TEXT_DARK).pack(anchor="w")
+            clip = self._peek_clips[self._peek_idx] if self._peek_clips else {}
+            self._peek_build_image_canvas(self._peek_body, clip)
         else:
             wrap_frame = tk.Frame(self._peek_body, bg=BORDER, padx=1, pady=1)
             wrap_frame.pack(fill="both", expand=True)
@@ -3055,9 +3409,12 @@ class App:
 
         # Resize window: measure actual required height after layout is settled
         win.update_idletasks()
-        oh = min(win.winfo_reqheight(), self._PEEK_MAX)
+        oh = self._PEEK_MAX if self._peek_is_image else min(win.winfo_reqheight(), self._PEEK_MAX)
         cx = win.winfo_x()
         cy = win.winfo_y()
+        # Clamp Y so the expanded window never falls off the bottom of the screen
+        sh = self.root.winfo_screenheight()
+        cy = min(cy, sh - oh - 48)
         win.geometry(f"{self._PEEK_W}x{oh}+{cx}+{cy}")
 
     def _peek_hide(self):
@@ -3088,6 +3445,7 @@ class App:
         self._peek_wrap_frame  = None
         self._peek_body        = None
         self._peek_copied_lbl  = None
+        self._peek_pin_lbl     = None
         if self._peek_window:
             try:
                 # Position is saved live during header drag only (_drag_move).
