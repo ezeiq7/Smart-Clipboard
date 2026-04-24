@@ -1,8 +1,8 @@
-<div align="center">
-
 > [!TIP]
 > ## ⬇️ [Download Smart Clipboard v1.3.0](https://github.com/ezeiq7/Smart-Clipboard/releases/latest)
 > Free • No installer needed • Windows 10/11
+
+<div align="center">
 
 <img src="logo.png" width="80" height="80" alt="Smart Clipboard Logo">
 
