@@ -1,5 +1,5 @@
 > [!TIP]
-> ## ⬇️ [Download Smart Clipboard v1.3.0](https://github.com/ezeiq7/Smart-Clipboard/releases/latest)
+> ## ⬇️ [Download Smart Clipboard v1.3.0](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.0/Smart.Clipboard.exe)
 > Free • No installer needed • Windows 10/11
 
 <div align="center">
@@ -21,7 +21,7 @@ Stop re-copying the same things over and over.
 
 Private by default. Nothing leaves your device. Ever.
 
-[![Download](https://img.shields.io/badge/Download-v1.3.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
+[![Download](https://img.shields.io/badge/Download-v1.3.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.0/Smart.Clipboard.exe)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![License](https://img.shields.io/badge/License-Source%20Available-orange?style=for-the-badge)](LICENSE)
 
