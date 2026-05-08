@@ -64,6 +64,8 @@ class QuickPasteLauncher:
     WIN_W    = 500
     WIN_H    = 360
     MAX_CLIPS = 200
+    ROW_H    = 34   # fixed pixel height per clip row
+    _VBUF    = 10   # rows to keep rendered above/below the visible viewport
 
     def __init__(self, tk_root, suppress_fn=None):
         self._root            = tk_root
@@ -81,7 +83,7 @@ class QuickPasteLauncher:
         self._help_after      = None
         self._render_after    = None
         self._last_nav_time   = 0.0
-        self._row_widgets     = []   # list of (row, pin_lbl, type_lbl, text_lbl, tag_lbl|None, clip)
+        self._row_widgets     = {}   # dict: idx -> (row, pin_lbl, type_lbl, text_lbl, tag_lbl|None, clip)
 
     # ── Public entry point ─────────────────────────────────────────────────
 
@@ -174,8 +176,6 @@ class QuickPasteLauncher:
             self._sb_thumb.place(x=0, y=int(first * h),
                                  width=8, height=max(20, int((last - first) * h)))
 
-        self._canvas.configure(yscrollcommand=_update_sb)
-
         def _sb_press(e):
             pass  # anchor recorded implicitly via y_root in motion
 
@@ -197,16 +197,28 @@ class QuickPasteLauncher:
         self._list_frame = tk.Frame(self._canvas, bg=BG)
         self._canvas_window = self._canvas.create_window((0, 0), window=self._list_frame, anchor="nw")
 
-        self._list_frame.bind("<Configure>", lambda _e: (
-            self._canvas.configure(scrollregion=self._canvas.bbox("all")),
-            self._canvas.itemconfig(self._canvas_window, width=self._canvas.winfo_width())
+        # With virtual scrolling the scrollregion is managed explicitly;
+        # only keep the width-sync on configure events.
+        self._list_frame.bind("<Configure>", lambda _e:
+            self._canvas.itemconfig(self._canvas_window, width=self._canvas.winfo_width()))
+        self._canvas.bind("<Configure>", lambda e: (
+            self._canvas.itemconfig(self._canvas_window, width=e.width),
+            self._update_virtual_rows(),
         ))
-        self._canvas.bind("<Configure>", lambda e:
-            self._canvas.itemconfig(self._canvas_window, width=e.width))
-        self._canvas.bind("<MouseWheel>", lambda e:
-            self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        win.bind("<MouseWheel>", lambda e:
-            self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+
+        def _on_wheel(e):
+            self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            self._update_virtual_rows()
+
+        self._canvas.bind("<MouseWheel>", _on_wheel)
+        win.bind("<MouseWheel>", _on_wheel)
+
+        # Trigger virtual-row update whenever the view position changes.
+        def _on_yscroll(first, last):
+            _update_sb(first, last)
+            self._update_virtual_rows()
+
+        self._canvas.configure(yscrollcommand=_on_yscroll)
 
         # ── Smart paste bar (hidden until Enter pressed) ──────────────────
         self._smart_bar = tk.Frame(inner, bg="#1E1E30")
@@ -330,9 +342,13 @@ class QuickPasteLauncher:
     # ── List rendering ────────────────────────────────────────────────────
 
     def _render_list(self):
+        # Destroy all currently rendered rows.
+        for entry in self._row_widgets.values():
+            entry[0].destroy()
+        self._row_widgets = {}
+        # Also clear any non-row children (e.g. the empty-state label).
         for w in self._list_frame.winfo_children():
             w.destroy()
-        self._row_widgets = []
         self._canvas.yview_moveto(0)
 
         if not self._clips:
@@ -340,15 +356,48 @@ class QuickPasteLauncher:
                      text="No clips match your search",
                      bg=BG, fg=TEXT_GRAY,
                      font=("Segoe UI", 10)).pack(pady=30)
+            self._canvas.config(scrollregion=(0, 0, self._canvas.winfo_width(), 80))
             return
 
-        for i, clip in enumerate(self._clips):
-            self._make_row(i, clip)
+        total_h = len(self._clips) * self.ROW_H
+        self._list_frame.config(height=total_h)
+        self._canvas.itemconfig(self._canvas_window, height=total_h)
+        self._canvas.config(scrollregion=(0, 0, self._canvas.winfo_width(), total_h))
+        # Defer to allow the canvas to settle before measuring the viewport.
+        self._canvas.after(1, self._update_virtual_rows)
+
+    def _update_virtual_rows(self):
+        """Create rows entering the viewport and destroy rows that have left it."""
+        if not self._clips:
+            return
+        canvas_h = self._canvas.winfo_height()
+        if canvas_h <= 1:
+            # Canvas not yet sized — retry once it is.
+            self._canvas.after(20, self._update_virtual_rows)
+            return
+
+        total_h = len(self._clips) * self.ROW_H
+        top_frac, bot_frac = self._canvas.yview()
+        first_vis = max(0, int(top_frac * total_h / self.ROW_H) - self._VBUF)
+        last_vis  = min(len(self._clips) - 1,
+                        int(bot_frac * total_h / self.ROW_H) + self._VBUF)
+
+        needed = set(range(first_vis, last_vis + 1))
+        current = set(self._row_widgets.keys())
+
+        # Destroy rows that scrolled out of the buffer zone.
+        for idx in current - needed:
+            self._row_widgets[idx][0].destroy()
+            del self._row_widgets[idx]
+
+        # Create rows that scrolled into the buffer zone.
+        for idx in sorted(needed - current):
+            self._make_row(idx, self._clips[idx])
 
     def _update_highlight(self, old_idx: int, new_idx: int):
         """Recolor only the two changed rows — no widget rebuild needed."""
         for idx in (old_idx, new_idx):
-            if idx < 0 or idx >= len(self._row_widgets):
+            if idx not in self._row_widgets:
                 continue
             row, pin_lbl, type_lbl, text_lbl, tag_lbl, clip = self._row_widgets[idx]
             selected = idx == new_idx
@@ -381,7 +430,7 @@ class QuickPasteLauncher:
         row_fg   = "#FFFFFF" if selected else TEXT_DARK
 
         row = tk.Frame(self._list_frame, bg=row_bg, cursor="hand2")
-        row.pack(fill="x", padx=2, pady=1)
+        row.place(x=2, y=idx * self.ROW_H + 1, relwidth=1, width=-4, height=self.ROW_H - 2)
 
         pin_lbl = tk.Label(row, text="📌" if clip.get("pinned") else "   ",
                            bg=row_bg, fg=PIN if not selected else "#FFFFFF",
@@ -415,8 +464,8 @@ class QuickPasteLauncher:
                                  font=("Segoe UI", 8, "bold"), padx=6, pady=4)
             tag_lbl.pack(side="right", padx=(0, 6))
 
-        self._row_widgets.append((row, pin_lbl, type_lbl, text_lbl,
-                                  tag_lbl if tag else None, clip))
+        self._row_widgets[idx] = (row, pin_lbl, type_lbl, text_lbl,
+                                  tag_lbl if tag else None, clip)
 
         # Single click → paste plain immediately
         for widget in (row, pin_lbl, type_lbl, text_lbl):
@@ -518,33 +567,26 @@ class QuickPasteLauncher:
             return
         old = self._selected
         self._selected = (self._selected + direction) % len(self._clips)
-        if self._row_widgets:
-            self._update_highlight(old, self._selected)
-            self._scroll_to_selected()
-        else:
-            self._render_list()
-            self._scroll_to_selected()
+        self._update_highlight(old, self._selected)
+        self._scroll_to_selected()
 
     def _scroll_to_selected(self):
         try:
-            rows = [w for w in self._list_frame.winfo_children() if isinstance(w, tk.Frame)]
-            if not rows or self._selected >= len(rows):
+            if not self._clips:
                 return
-            row = rows[self._selected]
-            self._list_frame.update_idletasks()
-            row_y    = row.winfo_y()
-            row_h    = row.winfo_height()
+            total_h  = len(self._clips) * self.ROW_H
             canvas_h = self._canvas.winfo_height()
-            total_h  = self._list_frame.winfo_height()
-            if total_h <= canvas_h:
+            if canvas_h <= 0 or total_h <= canvas_h:
                 return
-            top    = row_y / total_h
-            bottom = (row_y + row_h) / total_h
+            row_y    = self._selected * self.ROW_H
+            top_frac = row_y / total_h
+            bot_frac = (row_y + self.ROW_H) / total_h
             cur_top, cur_bot = self._canvas.yview()
-            if top < cur_top:
-                self._canvas.yview_moveto(top)
-            elif bottom > cur_bot:
-                self._canvas.yview_moveto(bottom - (canvas_h / total_h))
+            if top_frac < cur_top:
+                self._canvas.yview_moveto(top_frac)
+            elif bot_frac > cur_bot:
+                self._canvas.yview_moveto(bot_frac - canvas_h / total_h)
+            self._update_virtual_rows()
         except Exception:
             pass
 

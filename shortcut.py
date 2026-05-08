@@ -6,9 +6,11 @@ import ctypes.wintypes
 import pyperclip
 from pynput import keyboard
 
-_pressed        = set()
-_last_clip      = ""
-_last_ctrl_time = 0.0
+_pressed         = set()
+_last_clip       = ""
+_last_ctrl_time  = 0.0
+_ctrl_press_time = 0.0   # when the current Ctrl press started (to detect holds)
+_last_scroll_time = 0.0  # updated by mouse listener; blocks double-tap near Ctrl+scroll
 _peek_active    = False
 _peek_locked    = False  # True while overlay is pinned (survives Ctrl+Shift release)
 _peek_timer     = None   # threading.Timer for the hold delay
@@ -77,7 +79,7 @@ _MODIFIERS = frozenset((
 def _on_press(key, pin_callback=None, show_callback=None,
               peek_show_callback=None,
               peek_dismiss_callback=None, peek_hide_callback=None):
-    global _last_ctrl_time, _peek_active, _peek_timer, _pressed
+    global _last_ctrl_time, _ctrl_press_time, _peek_active, _peek_timer, _pressed
     try:
         # Compute was_fresh before any mutation so all guards below are consistent
         was_fresh = key not in _pressed
@@ -103,13 +105,21 @@ def _on_press(key, pin_callback=None, show_callback=None,
         # Only count a fresh tap — ignore key-repeat events while holding
         if is_ctrl and was_fresh:
             now = time.time()
+            _ctrl_press_time = now
             # Check if Shift or Alt is already held — if so this is a hotkey combo
             # (Ctrl+Shift+1, Ctrl+Shift+V etc.), never a double-Ctrl open
             shift_held = any(k in _pressed for k in (
                 keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r))
             alt_held   = any(k in _pressed for k in (
                 keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r))
-            if not shift_held and not alt_held and now - _last_ctrl_time < 0.3:
+            # Block if a scroll event was detected recently — pinch-to-zoom sends
+            # Ctrl+scroll so _last_scroll_time will be fresh during zoom gestures.
+            scroll_recent = (now - _last_scroll_time) < 0.5
+            elapsed = now - _last_ctrl_time
+            if scroll_recent:
+                # Invalidate timer so this Ctrl press can never be half of a double-tap.
+                _last_ctrl_time = 0.0
+            elif not shift_held and not alt_held and 0.08 <= elapsed < 0.3:
                 if show_callback:
                     show_callback()
                 _last_ctrl_time = 0.0
@@ -168,11 +178,17 @@ def _on_press(key, pin_callback=None, show_callback=None,
         pass
 
 def _on_release(key, peek_hide_callback=None):
-    global _peek_active, _peek_timer
+    global _peek_active, _peek_timer, _last_ctrl_time, _ctrl_press_time
     try:
         _pressed.discard(key)
         is_ctrl  = key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r)
         is_shift = key in (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r)
+        if is_ctrl:
+            # If Ctrl was held longer than 150ms it was part of a gesture
+            # (e.g. Ctrl+scroll to zoom) — invalidate the double-tap timer.
+            if _ctrl_press_time and (time.time() - _ctrl_press_time) > 0.15:
+                _last_ctrl_time  = 0.0
+                _ctrl_press_time = 0.0
         if is_ctrl or is_shift:
             # Cancel pending hold timer if Ctrl/Shift released before it fires
             if _peek_timer is not None:
@@ -363,6 +379,20 @@ def _make_pynput_listener(pin_callback, show_callback,
 def start_listener(save_callback, pin_callback=None, launcher_callback=None, toggle_callback=None, incognito_callback=None, show_callback=None, hotkey_clip_callback=None,
                    peek_show_callback=None, peek_dismiss_callback=None, peek_hide_callback=None):
     global _pynput_listener, _clipboard_thread
+
+    # Track scroll events so the double-tap Ctrl detector can ignore Ctrl+scroll
+    # gestures (pinch-to-zoom in apps like PDF viewers and Unity).
+    def _on_mouse_scroll(*_):
+        global _last_scroll_time
+        _last_scroll_time = time.time()
+
+    try:
+        from pynput import mouse as _pynput_mouse
+        _ms = _pynput_mouse.Listener(on_scroll=_on_mouse_scroll)
+        _ms.daemon = True
+        _ms.start()
+    except Exception:
+        pass
 
     def _start_clipboard_thread():
         global _clipboard_thread

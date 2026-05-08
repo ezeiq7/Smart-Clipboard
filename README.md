@@ -1,5 +1,5 @@
 > [!TIP]
-> ## ⬇️ [Download Smart Clipboard v1.3.0](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.0/Smart.Clipboard.exe)
+> ## ⬇️ [Download Smart Clipboard v1.3.1](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.1/Smart.Clipboard.exe)
 > Free • No installer needed • Windows 10/11
 
 <div align="center">
@@ -21,12 +21,12 @@ Stop re-copying the same things over and over.
 
 Private by default. Nothing leaves your device. Ever.
 
-[![Download](https://img.shields.io/badge/Download-v1.3.0-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.0/Smart.Clipboard.exe)
+[![Download](https://img.shields.io/badge/Download-v1.3.1-5B5FEF?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows)](https://github.com/ezeiq7/smart-clipboard/releases/latest)
 [![License](https://img.shields.io/badge/License-Source%20Available-orange?style=for-the-badge)](LICENSE)
 
 ### Full Walkthrough — Time Machine, Clipboard Peek & Split
-![Smart Clipboard v1.3.0 walkthrough — double-tap Ctrl to open, Clipboard Time Machine session grouping, Clipboard Peek with overlay navigation and lock, Clipboard Split converting a comma list to bullet points](demo1.gif)
+![Smart Clipboard v1.3.1 walkthrough — double-tap Ctrl to open, Clipboard Time Machine session grouping, Clipboard Peek with overlay navigation and lock, Clipboard Split converting a comma list to bullet points](demo1.gif)
 
 ### Smart Paste
 ![Smart Paste](demo2.gif)
@@ -250,6 +250,14 @@ Hold Ctrl+Shift from anywhere to instantly preview your last copied item without
 
 **What is Clipboard Time Machine?**
 Your clips are automatically grouped into work sessions based on time gaps. Instead of scrolling through a flat list, you can find clips by remembering what you were working on when you copied them.
+
+---
+
+## What's New in v1.3.1
+
+- **Performance fix** — launcher now uses virtual scrolling and stays smooth with 200+ clips
+- **Touchpad fix** — two finger pinch-to-zoom no longer accidentally opens Smart Clipboard
+- **Bulk delete** — deleting multiple clips at once now registers instantly
 
 ---
 
