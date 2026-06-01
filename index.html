@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Clipboard — The Windows Clipboard Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0d1a;
+      --bg2:      #12122a;
+      --bg3:      #1a1a35;
+      --accent:   #7c3aed;
+      --accent-h: #6d28d9;
+      --accent-g: #a855f7;
+      --border:   #2a2a4a;
+      --text:     #f0f0ff;
+      --muted:    #8888aa;
+      --radius:   12px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── NAV ─────────────────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+      height: 60px;
+      background: rgba(13, 13, 26, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .nav-logo img {
+      width: 28px;
+      height: 28px;
+    }
+
+    .nav-download {
+      padding: 7px 18px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .nav-download:hover { background: var(--accent-h); }
+
+    /* ── HERO ────────────────────────────────────────────── */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: clamp(5rem, 12vw, 9rem) clamp(1.5rem, 5vw, 4rem) clamp(4rem, 8vw, 7rem);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.22) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border: 1px solid rgba(124, 58, 237, 0.5);
+      border-radius: 100px;
+      font-size: 0.78rem;
+      color: var(--accent-g);
+      margin-bottom: 1.6rem;
+      background: rgba(124, 58, 237, 0.08);
+    }
+
+    .hero-badge span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-g); display: inline-block; }
+
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      max-width: 720px;
+      margin-bottom: 1.4rem;
+    }
+
+    h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, #a855f7, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: clamp(1rem, 2.2vw, 1.2rem);
+      color: var(--muted);
+      max-width: 560px;
+      margin-bottom: 2.4rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: var(--radius);
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 700;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 24px rgba(124, 58, 237, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-h);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(124, 58, 237, 0.45);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 24px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius);
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      background: rgba(124, 58, 237, 0.08);
+    }
+
+    .hero-meta {
+      margin-top: 1.4rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    /* ── DEMO ────────────────────────────────────────────── */
+    .demo {
+      padding: 0 clamp(1.5rem, 5vw, 4rem) clamp(4rem, 8vw, 7rem);
+      display: flex;
+      justify-content: center;
+    }
+
+    .demo-wrap {
+      width: 100%;
+      max-width: 820px;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.15), 0 24px 80px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+
+    .demo-bar {
+      background: var(--bg3);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .demo-bar span {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+    }
+    .demo-bar .dot-r { background: #ff5f57; }
+    .demo-bar .dot-y { background: #febc2e; }
+    .demo-bar .dot-g { background: #28c840; }
+
+    .demo-bar .demo-title {
+      margin-left: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      width: auto; height: auto;
+      border-radius: 0;
+      background: none;
+    }
+
+    .demo-wrap img {
+      width: 100%;
+      display: block;
+    }
+
+    /* ── SECTION HEADER ──────────────────────────────────── */
+    .section-header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .section-tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-g);
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header h2 {
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .section-header p {
+      margin-top: 0.75rem;
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ── FEATURES ────────────────────────────────────────── */
+    .features {
+      padding: clamp(4rem, 8vw, 7rem) clamp(1.5rem, 5vw, 4rem);
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.8rem;
+      transition: border-color 0.2s, transform 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-g));
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .card:hover {
+      border-color: rgba(124, 58, 237, 0.5);
+      transform: translateY(-3px);
+    }
+
+    .card:hover::before { opacity: 1; }
+
+    .card-icon {
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    .card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+
+    .card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .card-shortcut {
+      display: inline-block;
+      margin-top: 0.9rem;
+      padding: 3px 10px;
+      background: rgba(124, 58, 237, 0.12);
+      border: 1px solid rgba(124, 58, 237, 0.3);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      color: var(--accent-g);
+      font-family: "Cascadia Code", "Consolas", monospace;
+    }
+
+    /* ── TRUST BAR ───────────────────────────────────────── */
+    .trust {
+      padding: clamp(3rem, 6vw, 5rem) clamp(1.5rem, 5vw, 4rem);
+      text-align: center;
+    }
+
+    .trust-items {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: clamp(1.5rem, 4vw, 3.5rem);
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .trust-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .trust-item .trust-icon {
+      width: 44px;
+      height: 44px;
+      background: rgba(124, 58, 237, 0.12);
+      border: 1px solid rgba(124, 58, 237, 0.3);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+
+    .trust-item span {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* ── FOOTER ──────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem clamp(1.5rem, 5vw, 4rem);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .footer-left img {
+      width: 22px;
+      height: 22px;
+      opacity: 0.7;
+    }
+
+    footer p {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    footer a {
+      color: var(--accent-g);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    footer a:hover { text-decoration: underline; }
+
+    /* ── RESPONSIVE ──────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .hero-actions { flex-direction: column; align-items: center; }
+      .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+      footer { flex-direction: column; text-align: center; }
+      .footer-left { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <img src="logo.png" alt="Smart Clipboard">
+    Smart Clipboard
+  </a>
+  <a class="nav-download" href="https://github.com/ezeiq7/Smart-Clipboard/releases/latest">Download free</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge"><span></span> v1.3.1 — Now with virtual scrolling</div>
+  <h1>Your clipboard,<br><em>organized</em></h1>
+  <p class="hero-sub">The Windows clipboard manager that remembers everything, transforms your text, and never gets in your way.</p>
+  <div class="hero-actions">
+    <a class="btn-primary" href="https://github.com/ezeiq7/Smart-Clipboard/releases/latest">
+      ⬇ Download for Windows
+    </a>
+    <a class="btn-secondary" href="https://github.com/ezeiq7/Smart-Clipboard">
+      View on GitHub
+    </a>
+  </div>
+  <p class="hero-meta">Free forever &nbsp;·&nbsp; No installer &nbsp;·&nbsp; Windows 10 / 11</p>
+</section>
+
+<!-- DEMO -->
+<div class="demo">
+  <div class="demo-wrap">
+    <div class="demo-bar">
+      <span class="dot-r"></span>
+      <span class="dot-y"></span>
+      <span class="dot-g"></span>
+      <span class="demo-title">Smart Clipboard — live demo</span>
+    </div>
+    <img src="demo1.gif" alt="Smart Clipboard walkthrough — Clipboard Time Machine, Clipboard Peek, and Smart Split">
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="features">
+  <div class="section-header">
+    <span class="section-tag">Features</span>
+    <h2>Everything your clipboard should do</h2>
+    <p>Four power features that save hours of copy-paste grunt work every week.</p>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <span class="card-icon">👀</span>
+      <h3>Clipboard Peek</h3>
+      <p>Hold Ctrl+Shift to instantly preview your last copied item as a floating overlay — without leaving your current app or losing focus.</p>
+      <span class="card-shortcut">Ctrl + Shift (hold)</span>
+    </div>
+    <div class="card">
+      <span class="card-icon">✨</span>
+      <h3>Smart Paste</h3>
+      <p>Transform text before it lands. Clean smart quotes, strip line breaks, convert to bullet points, UPPERCASE or lowercase — one keystroke.</p>
+      <span class="card-shortcut">Ctrl + Shift + V</span>
+    </div>
+    <div class="card">
+      <span class="card-icon">✂️</span>
+      <h3>Smart Split</h3>
+      <p>Copy a comma-separated list and Smart Clipboard detects it automatically. Split into separate clips, a bullet list, or a numbered list instantly.</p>
+      <span class="card-shortcut">X</span>
+    </div>
+    <div class="card">
+      <span class="card-icon">⚡</span>
+      <h3>Hotkey Clips</h3>
+      <p>Assign your most-used clips to Ctrl+Shift+1 through 9. Paste them from anywhere on your PC without opening the app at all.</p>
+      <span class="card-shortcut">Ctrl + Shift + 1–9</span>
+    </div>
+  </div>
+</section>
+
+<!-- TRUST BAR -->
+<section class="trust">
+  <div class="trust-items">
+    <div class="trust-item">
+      <div class="trust-icon">🆓</div>
+      <span>Free</span>
+    </div>
+    <div class="trust-item">
+      <div class="trust-icon">📖</div>
+      <span>Open Source</span>
+    </div>
+    <div class="trust-item">
+      <div class="trust-icon">🚫</div>
+      <span>No accounts</span>
+    </div>
+    <div class="trust-item">
+      <div class="trust-icon">🪟</div>
+      <span>Windows 10/11</span>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">
+    <img src="logo.png" alt="">
+    <p>Smart Clipboard &nbsp;·&nbsp; Built by <a href="https://github.com/ezeiq7">Uzair</a></p>
+  </div>
+  <p><a href="https://github.com/ezeiq7/Smart-Clipboard">GitHub</a> &nbsp;·&nbsp; <a href="https://github.com/ezeiq7/Smart-Clipboard/releases/latest">Download</a> &nbsp;·&nbsp; <a href="https://github.com/ezeiq7/Smart-Clipboard/issues">Report a bug</a></p>
+</footer>
+
+</body>
+</html>
