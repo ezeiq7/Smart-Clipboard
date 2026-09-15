@@ -253,6 +253,14 @@ Your clips are automatically grouped into work sessions based on time gaps. Inst
 
 ---
 
+## 🛡️ v1.3.2 — Security & Trust
+
+- Rebuilt exe from clean environment
+- VirusTotal score improved from 35/70 to 3/70
+- No code changes — pure rebuild
+
+---
+
 ## What's New in v1.3.1
 
 - **Performance fix** — launcher now uses virtual scrolling and stays smooth with 200+ clips
