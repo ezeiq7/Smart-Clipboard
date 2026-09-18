@@ -1,5 +1,5 @@
 > [!TIP]
-> ## ⬇️ [Download Smart Clipboard v1.3.1](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.1/Smart.Clipboard.exe)
+> ## ⬇️ [Download Smart Clipboard v1.3.2](https://github.com/ezeiq7/Smart-Clipboard/releases/download/v1.3.2/Smart.Clipboard.exe)
 > Free • No installer needed • Windows 10/11
 
 <div align="center">
